@@ -7,7 +7,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
 {
     public static GerenciadorVideoExplicativo Instance { get; private set; }
 
-    [Header("Links Diretos do YouTube por Dificuldade")]
+    [Header("Links Diretos do YouTube por Dificuldade (Português)")]
     [Tooltip("Vídeo direto do YouTube para o Nível Fácil (Uso de S e SS)")]
     public string urlYoutubeFacil = "https://www.youtube.com/watch?v=TMvXPgoQsJA";
 
@@ -18,7 +18,17 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
     public string urlYoutubeDificil = "https://www.youtube.com/watch?v=-TwnJNqePnw";
 
     [Tooltip("Vídeo geral padrão")]
-    public string urlYoutubeGeral = "https://www.youtube.com/watch?v=TMvXPgoQsJA";
+    public string urlYoutubeGeral = "https://www.youtube.com/watch?v=prsJNR0Zbqg";
+
+    [Header("Links Diretos do YouTube por Dificuldade (Matemática)")]
+    [Tooltip("Vídeo direto do YouTube para Matemática Fácil (Adição, Subtração e Multiplicação Infantil)")]
+    public string urlYoutubeMathFacil = "https://www.youtube.com/watch?v=prsJNR0Zbqg";
+
+    [Tooltip("Vídeo direto do YouTube para Matemática Médio (Divisão e Expressões com Parênteses)")]
+    public string urlYoutubeMathMedio = "https://www.youtube.com/watch?v=T7Co1o7fh6k";
+
+    [Tooltip("Vídeo direto do YouTube para Matemática Difícil (Expressões Numéricas e Potenciação)")]
+    public string urlYoutubeMathDificil = "https://www.youtube.com/watch?v=Xx8e6QGf7IQ";
 
     [Header("Sprites de UI (Carregados automaticamente se nulos)")]
     public Sprite spriteFundoPainel;
@@ -29,6 +39,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
     public Sprite spriteBtnVermelho;
     public Sprite spriteBadgeTopo;
     public TMP_FontAsset fonteTexto;
+    public TMP_FontAsset fontLimpa;
 
     // Elementos do Modal
     private Canvas canvasVideo;
@@ -72,6 +83,10 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         {
             TMP_FontAsset[] fontes = Resources.FindObjectsOfTypeAll<TMP_FontAsset>();
             if (fontes != null && fontes.Length > 0) fonteTexto = fontes[0];
+        }
+        if (fontLimpa == null)
+        {
+            fontLimpa = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF") ?? TMP_Settings.defaultFontAsset ?? fonteTexto;
         }
 
         spriteFundoPainel = CarregarSprite(spriteFundoPainel, "fundo_pergaminho_jogo", "Botoes/fundo_pergaminho_jogo.png", new Vector4(40, 40, 40, 40));
@@ -215,7 +230,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         GameObject goCanvas = new GameObject("Canvas_VideoExplicativo", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster), typeof(CanvasGroup));
         canvasVideo = goCanvas.GetComponent<Canvas>();
         canvasVideo.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvasVideo.sortingOrder = 200; // Na camada de cima da do Game Over
+        canvasVideo.sortingOrder = 1000; // Na camada superior absoluta (acima do Game Over e TopBar)
 
         CanvasScaler scaler = goCanvas.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
@@ -238,27 +253,77 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         Image imgFundo = goFundo.GetComponent<Image>();
         imgFundo.color = new Color(0.12f, 0.12f, 0.15f, 0.78f);
 
-        // Moldura Amarela Principal (Container Amarelo da imagem de referência)
-        painelJanela = new GameObject("JanelaModalAmarela", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        // Moldura Principal Acolhedora (Estilo Pergaminho / Quadro Educativo Lúdico)
+        painelJanela = new GameObject("JanelaModalAcolhedora", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         painelJanela.transform.SetParent(goCanvas.transform, false);
         RectTransform rtJanela = painelJanela.GetComponent<RectTransform>();
         rtJanela.anchorMin = new Vector2(0.5f, 0.5f);
         rtJanela.anchorMax = new Vector2(0.5f, 0.5f);
         rtJanela.pivot = new Vector2(0.5f, 0.5f);
-        rtJanela.sizeDelta = new Vector2(1380f, 740f);
+        rtJanela.sizeDelta = new Vector2(1440f, 780f);
 
         Image imgJanela = painelJanela.GetComponent<Image>();
-        imgJanela.color = new Color(1f, 0.88f, 0.15f, 1f); // Amarelo vivo e acolhedor
+        if (spriteFundoPainel != null)
+        {
+            imgJanela.sprite = spriteFundoPainel;
+            imgJanela.type = Image.Type.Sliced;
+            imgJanela.color = Color.white;
+        }
+        else
+        {
+            imgJanela.color = new Color(0.99f, 0.98f, 0.95f, 1f); // Creme suave e elegante
+        }
 
-        // Botão Fechar 'X' no topo superior direito
+        // Faixa de Topo com Ícone da Lâmpada Cartoon e Título Alegre (Baixado para não colar na borda)
+        GameObject goHeader = new GameObject("HeaderModal", typeof(RectTransform), typeof(CanvasRenderer));
+        goHeader.transform.SetParent(painelJanela.transform, false);
+        RectTransform rtH = goHeader.GetComponent<RectTransform>();
+        rtH.anchorMin = new Vector2(0.5f, 1f);
+        rtH.anchorMax = new Vector2(0.5f, 1f);
+        rtH.pivot = new Vector2(0.5f, 1f);
+        rtH.anchoredPosition = new Vector2(0f, -65f);
+        rtH.sizeDelta = new Vector2(1100f, 65f);
+
+        // Ícone da lâmpada cartoon no topo
+        GameObject goLamp = new GameObject("LampadaIcon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        goLamp.transform.SetParent(goHeader.transform, false);
+        RectTransform rtLamp = goLamp.GetComponent<RectTransform>();
+        rtLamp.anchorMin = new Vector2(0f, 0.5f);
+        rtLamp.anchorMax = new Vector2(0f, 0.5f);
+        rtLamp.pivot = new Vector2(0f, 0.5f);
+        rtLamp.anchoredPosition = new Vector2(90f, 0f);
+        rtLamp.sizeDelta = new Vector2(56f, 56f);
+        Image imgLamp = goLamp.GetComponent<Image>();
+        Sprite sprL = Action.ObterSpriteLampadaCartoon();
+        if (sprL != null)
+        {
+            imgLamp.sprite = sprL;
+            imgLamp.preserveAspect = true;
+            imgLamp.color = Color.white;
+        }
+
+        // Título do Topo
+        GameObject goTitTopo = new GameObject("TituloTopo", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTitTopo.transform.SetParent(goHeader.transform, false);
+        RectTransform rtTT = goTitTopo.GetComponent<RectTransform>();
+        rtTT.anchorMin = Vector2.zero;
+        rtTT.anchorMax = Vector2.one;
+        rtTT.offsetMin = new Vector2(160f, 0f);
+        rtTT.offsetMax = new Vector2(-100f, 0f);
+        TextMeshProUGUI tmpTT = goTitTopo.GetComponent<TextMeshProUGUI>();
+        tmpTT.font = fontLimpa ?? fonteTexto;
+        tmpTT.text = "<b><size=28><color=#2C1808>DICA DO AMIGUINHO - COMO RESOLVER</color></size></b>\n<size=16><color=#6D4C41>Aprenda o passo a passo e assista ao vídeo explicativo em desenho animado!</color></size>";
+        tmpTT.alignment = TextAlignmentOptions.MidlineLeft;
+
+        // Botão Fechar 'X' no topo superior direito (posicionado mais para dentro da moldura)
         GameObject goX = new GameObject("BtnFecharX", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
         goX.transform.SetParent(painelJanela.transform, false);
         RectTransform rtX = goX.GetComponent<RectTransform>();
         rtX.anchorMin = new Vector2(1f, 1f);
         rtX.anchorMax = new Vector2(1f, 1f);
         rtX.pivot = new Vector2(1f, 1f);
-        rtX.anchoredPosition = new Vector2(-15f, -15f);
-        rtX.sizeDelta = new Vector2(55f, 55f);
+        rtX.anchoredPosition = new Vector2(-55f, -55f);
+        rtX.sizeDelta = new Vector2(50f, 50f);
 
         Image imgX = goX.GetComponent<Image>();
         if (spriteXFechar != null)
@@ -269,13 +334,26 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         else
         {
             imgX.color = new Color(0.85f, 0.2f, 0.2f, 1f);
+            GameObject goTxtX = new GameObject("TxtX", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            goTxtX.transform.SetParent(goX.transform, false);
+            RectTransform rtTxtX = goTxtX.GetComponent<RectTransform>();
+            rtTxtX.anchorMin = Vector2.zero;
+            rtTxtX.anchorMax = Vector2.one;
+            rtTxtX.offsetMin = Vector2.zero;
+            rtTxtX.offsetMax = Vector2.zero;
+            TextMeshProUGUI tmpX = goTxtX.GetComponent<TextMeshProUGUI>();
+            tmpX.font = fontLimpa ?? fonteTexto;
+            tmpX.text = "<b>X</b>";
+            tmpX.fontSize = 28f;
+            tmpX.alignment = TextAlignmentOptions.Center;
+            tmpX.color = Color.white;
         }
 
         Button btnX = goX.GetComponent<Button>();
         btnX.onClick.AddListener(FecharTelaVideo);
 
         // =========================================================================
-        // CAIXA 1 (ESQUERDA - LARANJA): Explicação do nível e convite para o YouTube
+        // CAIXA 1 (ESQUERDA): Card Educativo Acolhedor (Passo a Passo)
         // =========================================================================
         GameObject goCaixaEsquerda = new GameObject("CaixaExplicacaoEsquerda", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         goCaixaEsquerda.transform.SetParent(painelJanela.transform, false);
@@ -283,24 +361,36 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtEsq.anchorMin = new Vector2(0.5f, 0.5f);
         rtEsq.anchorMax = new Vector2(0.5f, 0.5f);
         rtEsq.pivot = new Vector2(0.5f, 0.5f);
-        rtEsq.anchoredPosition = new Vector2(-335f, 0f);
-        rtEsq.sizeDelta = new Vector2(590f, 630f);
+        rtEsq.anchoredPosition = new Vector2(-345f, -50f);
+        rtEsq.sizeDelta = new Vector2(650f, 580f);
 
         Image imgEsq = goCaixaEsquerda.GetComponent<Image>();
-        imgEsq.color = new Color(0.98f, 0.48f, 0.12f, 1f); // Laranja vivo da ilustração
+        imgEsq.color = new Color(0.95f, 0.93f, 0.88f, 1f); // Card pergaminho suave
+        if (spriteBadgeTopo != null)
+        {
+            imgEsq.sprite = spriteBadgeTopo;
+            imgEsq.type = Image.Type.Sliced;
+            imgEsq.color = Color.white;
+        }
 
-        // Quadradinho de cima: Fundo escuro com texto de ALTÍSSIMO contraste (100% legível)
+        // Badge no topo do card esquerdo: Azul escuro educacional
         GameObject goBadgeDica = new GameObject("BadgeDica", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         goBadgeDica.transform.SetParent(goCaixaEsquerda.transform, false);
         RectTransform rtBadge = goBadgeDica.GetComponent<RectTransform>();
         rtBadge.anchorMin = new Vector2(0.5f, 1f);
         rtBadge.anchorMax = new Vector2(0.5f, 1f);
         rtBadge.pivot = new Vector2(0.5f, 1f);
-        rtBadge.anchoredPosition = new Vector2(0f, -25f);
-        rtBadge.sizeDelta = new Vector2(520f, 58f);
+        rtBadge.anchoredPosition = new Vector2(0f, -18f);
+        rtBadge.sizeDelta = new Vector2(560f, 52f);
 
         Image imgBadge = goBadgeDica.GetComponent<Image>();
-        imgBadge.color = new Color(0.24f, 0.08f, 0.02f, 1f); // Marrom escuro café intenso para contraste perfeito
+        imgBadge.color = new Color(0.12f, 0.28f, 0.58f, 1f); // Azul nobre amigável
+        if (spriteBtnAzul != null)
+        {
+            imgBadge.sprite = spriteBtnAzul;
+            imgBadge.type = Image.Type.Sliced;
+            imgBadge.color = Color.white;
+        }
 
         GameObject goTxtBadge = new GameObject("TextoBadge", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         goTxtBadge.transform.SetParent(goBadgeDica.transform, false);
@@ -310,12 +400,11 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTB.sizeDelta = Vector2.zero;
 
         TextMeshProUGUI tmpBadge = goTxtBadge.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) tmpBadge.font = fonteTexto;
-        tmpBadge.text = "DICA PEDAGÓGICA"; // Texto sem emoji para evitar quadrados não mapeados
-        tmpBadge.fontSize = 28f;
+        tmpBadge.font = fontLimpa ?? fonteTexto;
+        tmpBadge.text = "<b>DICA PASSO A PASSO</b>";
+        tmpBadge.fontSize = 22f;
         tmpBadge.alignment = TextAlignmentOptions.Center;
-        tmpBadge.color = new Color(1f, 0.94f, 0.72f, 1f); // Dourado creme brilhante: máxima nitidez!
-        tmpBadge.fontStyle = FontStyles.Bold;
+        tmpBadge.color = Color.white;
 
         // Subtítulo do Nível
         GameObject goTituloNivel = new GameObject("TituloNivel", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
@@ -324,44 +413,44 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTN.anchorMin = new Vector2(0.5f, 1f);
         rtTN.anchorMax = new Vector2(0.5f, 1f);
         rtTN.pivot = new Vector2(0.5f, 1f);
-        rtTN.anchoredPosition = new Vector2(0f, -95f);
-        rtTN.sizeDelta = new Vector2(520f, 50f);
+        rtTN.anchoredPosition = new Vector2(0f, -70f);
+        rtTN.sizeDelta = new Vector2(580f, 36f);
 
         textoTituloNivel = goTituloNivel.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) textoTituloNivel.font = fonteTexto;
-        textoTituloNivel.fontSize = 24f;
+        textoTituloNivel.font = fontLimpa ?? fonteTexto;
+        textoTituloNivel.fontSize = 20f;
         textoTituloNivel.alignment = TextAlignmentOptions.Center;
-        textoTituloNivel.color = new Color(1f, 0.95f, 0.8f, 1f);
+        textoTituloNivel.color = new Color(0.15f, 0.22f, 0.35f, 1f);
         textoTituloNivel.fontStyle = FontStyles.Bold;
         textoTituloNivel.text = "Como funcionam as palavras desse nível";
 
-        // Texto com a Explicação do Nível e Convite ao YouTube
+        // Texto com a Explicação do Nível e Passo a Passo (100% legível)
         GameObject goCorpo = new GameObject("CorpoExplicacao", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         goCorpo.transform.SetParent(goCaixaEsquerda.transform, false);
         RectTransform rtCorpo = goCorpo.GetComponent<RectTransform>();
         rtCorpo.anchorMin = new Vector2(0.5f, 0.5f);
         rtCorpo.anchorMax = new Vector2(0.5f, 0.5f);
         rtCorpo.pivot = new Vector2(0.5f, 0.5f);
-        rtCorpo.anchoredPosition = new Vector2(0f, -15f);
-        rtCorpo.sizeDelta = new Vector2(510f, 340f);
+        rtCorpo.anchoredPosition = new Vector2(0f, -6f);
+        rtCorpo.sizeDelta = new Vector2(580f, 350f);
 
         textoCorpoExplicacao = goCorpo.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) textoCorpoExplicacao.font = fonteTexto;
-        textoCorpoExplicacao.fontSize = 20f;
+        textoCorpoExplicacao.font = fontLimpa ?? fonteTexto;
+        textoCorpoExplicacao.fontSize = 18f;
         textoCorpoExplicacao.alignment = TextAlignmentOptions.TopLeft;
-        textoCorpoExplicacao.color = Color.white;
-        textoCorpoExplicacao.lineSpacing = 15f;
+        textoCorpoExplicacao.color = new Color(0.18f, 0.14f, 0.10f, 1f);
+        textoCorpoExplicacao.lineSpacing = 8f;
         textoCorpoExplicacao.text = "Explicando sobre o nível e falando sobre abrir o vídeo explicativo no Youtube.";
 
-        // Botão TENTAR NOVAMENTE na Caixa Esquerda
+        // Botão CONTINUAR JOGANDO na Caixa Esquerda
         GameObject goBtnTentar = new GameObject("BtnTentarNovamente", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
         goBtnTentar.transform.SetParent(goCaixaEsquerda.transform, false);
         RectTransform rtBtnTentar = goBtnTentar.GetComponent<RectTransform>();
         rtBtnTentar.anchorMin = new Vector2(0.5f, 0f);
         rtBtnTentar.anchorMax = new Vector2(0.5f, 0f);
         rtBtnTentar.pivot = new Vector2(0.5f, 0f);
-        rtBtnTentar.anchoredPosition = new Vector2(0f, 25f);
-        rtBtnTentar.sizeDelta = new Vector2(290f, 54f);
+        rtBtnTentar.anchoredPosition = new Vector2(0f, 20f);
+        rtBtnTentar.sizeDelta = new Vector2(320f, 52f);
 
         Image imgBtnTentar = goBtnTentar.GetComponent<Image>();
         if (spriteBtnVerde != null)
@@ -380,21 +469,20 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
 
         GameObject goTxtTentar = new GameObject("Texto", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
         goTxtTentar.transform.SetParent(goBtnTentar.transform, false);
-        RectTransform rtTT = goTxtTentar.GetComponent<RectTransform>();
-        rtTT.anchorMin = Vector2.zero;
-        rtTT.anchorMax = Vector2.one;
-        rtTT.sizeDelta = Vector2.zero;
+        RectTransform rtTT2 = goTxtTentar.GetComponent<RectTransform>();
+        rtTT2.anchorMin = Vector2.zero;
+        rtTT2.anchorMax = Vector2.one;
+        rtTT2.sizeDelta = Vector2.zero;
 
         TextMeshProUGUI tmpTentar = goTxtTentar.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) tmpTentar.font = fonteTexto;
-        tmpTentar.text = "TENTAR NOVAMENTE";
+        tmpTentar.font = fontLimpa ?? fonteTexto;
+        tmpTentar.text = "<b>CONTINUAR JOGANDO</b>";
         tmpTentar.fontSize = 19f;
         tmpTentar.alignment = TextAlignmentOptions.Center;
         tmpTentar.color = Color.white;
-        tmpTentar.fontStyle = FontStyles.Bold;
 
         // =========================================================================
-        // CAIXA 2 (DIREITA - LARANJA): Card com Acesso ao Vídeo no YouTube
+        // CAIXA 2 (DIREITA): Card com Player e Vídeo do YouTube
         // =========================================================================
         GameObject goCaixaDireita = new GameObject("CaixaVideoDireita", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         goCaixaDireita.transform.SetParent(painelJanela.transform, false);
@@ -402,11 +490,17 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtDir.anchorMin = new Vector2(0.5f, 0.5f);
         rtDir.anchorMax = new Vector2(0.5f, 0.5f);
         rtDir.pivot = new Vector2(0.5f, 0.5f);
-        rtDir.anchoredPosition = new Vector2(335f, 0f);
-        rtDir.sizeDelta = new Vector2(650f, 630f);
+        rtDir.anchoredPosition = new Vector2(345f, -50f);
+        rtDir.sizeDelta = new Vector2(650f, 580f);
 
         Image imgDir = goCaixaDireita.GetComponent<Image>();
-        imgDir.color = new Color(0.98f, 0.48f, 0.12f, 1f); // Laranja vivo da ilustração
+        imgDir.color = new Color(0.95f, 0.93f, 0.88f, 1f);
+        if (spriteBadgeTopo != null)
+        {
+            imgDir.sprite = spriteBadgeTopo;
+            imgDir.type = Image.Type.Sliced;
+            imgDir.color = Color.white;
+        }
 
         // Tela / Thumbnail de Preview do YouTube (Clicável)
         GameObject goTelaPreview = new GameObject("TelaPreviewYoutube", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
@@ -415,8 +509,8 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtPreview.anchorMin = new Vector2(0.5f, 1f);
         rtPreview.anchorMax = new Vector2(0.5f, 1f);
         rtPreview.pivot = new Vector2(0.5f, 1f);
-        rtPreview.anchoredPosition = new Vector2(0f, -25f);
-        rtPreview.sizeDelta = new Vector2(580f, 360f);
+        rtPreview.anchoredPosition = new Vector2(0f, -20f);
+        rtPreview.sizeDelta = new Vector2(580f, 320f);
 
         Image imgPreview = goTelaPreview.GetComponent<Image>();
         imgPreview.color = new Color(0.12f, 0.12f, 0.14f, 1f); // Fundo escuro estilo player
@@ -424,7 +518,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         Button btnPreview = goTelaPreview.GetComponent<Button>();
         btnPreview.onClick.AddListener(AbrirLinkYoutube);
 
-        // Selo do YouTube no topo da preview (Sem caracteres ausentes)
+        // Selo do YouTube no topo da preview
         GameObject goBadgeYT = new GameObject("BadgeYT", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         goBadgeYT.transform.SetParent(goTelaPreview.transform, false);
         RectTransform rtBYT = goBadgeYT.GetComponent<RectTransform>();
@@ -432,7 +526,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtBYT.anchorMax = new Vector2(0f, 1f);
         rtBYT.pivot = new Vector2(0f, 1f);
         rtBYT.anchoredPosition = new Vector2(18f, -18f);
-        rtBYT.sizeDelta = new Vector2(130f, 38f);
+        rtBYT.sizeDelta = new Vector2(130f, 36f);
 
         Image imgBYT = goBadgeYT.GetComponent<Image>();
         imgBYT.color = new Color(0.9f, 0.13f, 0.09f, 1f); // Vermelho YouTube
@@ -445,7 +539,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTYT.sizeDelta = Vector2.zero;
 
         TextMeshProUGUI tmpYT = goTxtYT.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) tmpYT.font = fonteTexto;
+        tmpYT.font = fontLimpa ?? fonteTexto;
         tmpYT.text = "YouTube";
         tmpYT.fontSize = 20f;
         tmpYT.alignment = TextAlignmentOptions.Center;
@@ -489,7 +583,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTP.sizeDelta = new Vector2(500f, 60f);
 
         TextMeshProUGUI tmpP = goTextoPreview.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) tmpP.font = fonteTexto;
+        tmpP.font = fontLimpa ?? fonteTexto;
         tmpP.text = "<b>Vídeo Youtube</b>\n<size=80%>Clique aqui para assistir a explicação</size>";
         tmpP.fontSize = 22f;
         tmpP.alignment = TextAlignmentOptions.Center;
@@ -502,14 +596,14 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTV.anchorMin = new Vector2(0.5f, 0f);
         rtTV.anchorMax = new Vector2(0.5f, 0f);
         rtTV.pivot = new Vector2(0.5f, 0f);
-        rtTV.anchoredPosition = new Vector2(0f, 130f);
-        rtTV.sizeDelta = new Vector2(580f, 70f);
+        rtTV.anchoredPosition = new Vector2(0f, 115f);
+        rtTV.sizeDelta = new Vector2(580f, 60f);
 
         textoTituloVideo = goTituloVideo.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) textoTituloVideo.font = fonteTexto;
+        textoTituloVideo.font = fontLimpa ?? fonteTexto;
         textoTituloVideo.fontSize = 20f;
         textoTituloVideo.alignment = TextAlignmentOptions.Center;
-        textoTituloVideo.color = new Color(1f, 0.95f, 0.8f, 1f);
+        textoTituloVideo.color = new Color(0.18f, 0.14f, 0.10f, 1f);
         textoTituloVideo.fontStyle = FontStyles.Bold;
         textoTituloVideo.text = "Vídeo: Aprenda as Regrinhas Ortográficas de Forma Fácil!";
 
@@ -520,8 +614,8 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtBtnYT.anchorMin = new Vector2(0.5f, 0f);
         rtBtnYT.anchorMax = new Vector2(0.5f, 0f);
         rtBtnYT.pivot = new Vector2(0.5f, 0f);
-        rtBtnYT.anchoredPosition = new Vector2(0f, 25f);
-        rtBtnYT.sizeDelta = new Vector2(420f, 65f);
+        rtBtnYT.anchoredPosition = new Vector2(0f, 20f);
+        rtBtnYT.sizeDelta = new Vector2(420f, 60f);
 
         Image imgBtnYT = goBtnYT.GetComponent<Image>();
         imgBtnYT.color = new Color(0.9f, 0.13f, 0.09f, 1f); // Vermelho YouTube oficial
@@ -537,7 +631,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         rtTYTB.sizeDelta = Vector2.zero;
 
         TextMeshProUGUI tmpYTBtn = goTxtYTBtn.GetComponent<TextMeshProUGUI>();
-        if (fonteTexto != null) tmpYTBtn.font = fonteTexto;
+        tmpYTBtn.font = fontLimpa ?? fonteTexto;
         tmpYTBtn.text = "ASSISTIR NO YOUTUBE";
         tmpYTBtn.fontSize = 22f;
         tmpYTBtn.alignment = TextAlignmentOptions.Center;
@@ -572,6 +666,89 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
         if (gerenciadorFases != null) nivel = gerenciadorFases.nivelAtual;
         else if (gameManager != null) nivel = gameManager.NivelAtualID;
 
+        bool isMath = (gameManager != null && gameManager.JogandoMatematica);
+        if (!isMath && actionScript != null && actionScript.telaDificuldadeAtual == actionScript.groupDificuldadeMatematica)
+        {
+            isMath = true;
+        }
+
+        if (isMath)
+        {
+            ConfigurarConteudoMatematica(nivel);
+        }
+        else
+        {
+            ConfigurarConteudoPortugues(nivel);
+        }
+    }
+
+    private void ConfigurarConteudoMatematica(int nivel)
+    {
+        string resolucaoQuestao = "";
+        if (gameManager != null && !string.IsNullOrEmpty(gameManager.UltimaPerguntaMatematica))
+        {
+            resolucaoQuestao = 
+                $"<b>RESOLUÇÃO PASSO A PASSO DA SUA QUESTÃO:</b>\n" +
+                $"<size=22><color=#FFE082><b>{gameManager.UltimaPerguntaMatematica}</b></color></size>\n" +
+                $"{gameManager.UltimoPassoAPassoMatematica}\n\n";
+        }
+
+        switch (nivel)
+        {
+            case 0: // Matemática Fácil
+                urlAtual = !string.IsNullOrEmpty(urlYoutubeMathFacil) ? urlYoutubeMathFacil : urlYoutubeGeral;
+                if (textoTituloNivel != null) textoTituloNivel.text = "Matemática Fácil: Adição, Subtração e Tabuada";
+                if (textoCorpoExplicacao != null)
+                {
+                    textoCorpoExplicacao.text =
+                        resolucaoQuestao +
+                        "<b>COMO RESOLVER PASSO A PASSO:</b>\n" +
+                        "- <b>Adição (+):</b> Comece somando as unidades (direita) e depois as dezenas!\n" +
+                        "- <b>Subtração (-):</b> Subtraia as unidades e depois as dezenas. Se faltar, empreste do vizinho!\n" +
+                        "- <b>Multiplicação (x):</b> Multiplicar é somar o mesmo número várias vezes (ex: 3 x 4 = 3 + 3 + 3 + 3 = 12)!\n\n" +
+                        "<b>Assista ao vídeo no YouTube ao lado</b> para ver desenhos animados ensinando as continhas!";
+                }
+                if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Aprendendo a Somar com Dinossauros (Smile and Learn)";
+                break;
+
+            case 1: // Matemática Médio
+                urlAtual = !string.IsNullOrEmpty(urlYoutubeMathMedio) ? urlYoutubeMathMedio : urlYoutubeGeral;
+                if (textoTituloNivel != null) textoTituloNivel.text = "Matemática Médio: Divisão e Parênteses";
+                if (textoCorpoExplicacao != null)
+                {
+                    textoCorpoExplicacao.text =
+                        resolucaoQuestao +
+                        "<b>COMO RESOLVER PASSO A PASSO:</b>\n" +
+                        "- <b>Divisão (/):</b> Pense na multiplicação inversa! Se 4 x 5 = 20, então 20 ÷ 4 = 5!\n" +
+                        "- <b>Expressões com Parênteses:</b>\n" +
+                        "  Em contas como <b>15 + (4 x 3)</b>, resolva <b>SEMPRE os parênteses primeiro</b> (4 x 3 = 12) e depois some (15 + 12 = 27)!\n\n" +
+                        "<b>Abra o vídeo no YouTube ao lado</b> para conferir o método de divisão e expressões!";
+                }
+                if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Divisão Divertida com os Macacos (Smile and Learn)";
+                break;
+
+            case 2: // Matemática Difícil
+            default:
+                urlAtual = !string.IsNullOrEmpty(urlYoutubeMathDificil) ? urlYoutubeMathDificil : urlYoutubeGeral;
+                if (textoTituloNivel != null) textoTituloNivel.text = "Matemática Difícil: Expressões e Potenciação";
+                if (textoCorpoExplicacao != null)
+                {
+                    textoCorpoExplicacao.text =
+                        resolucaoQuestao +
+                        "<b>ORDEM DAS OPERAÇÕES (PASSO A PASSO):</b>\n" +
+                        "1. <b>Parênteses:</b> Resolva tudo o que estiver dentro de ( ) primeiro.\n" +
+                        "2. <b>Potências:</b> 5² significa 5 multiplicado por ele mesmo (5 x 5 = 25)!\n" +
+                        "3. <b>Multiplicação e Divisão</b>\n" +
+                        "4. <b>Adição e Subtração</b>\n\n" +
+                        "<b>Clique no vídeo no YouTube ao lado</b> para aprender a resolver qualquer expressão!";
+                }
+                if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Operações Combinadas e Parênteses (Smile and Learn)";
+                break;
+        }
+    }
+
+    private void ConfigurarConteudoPortugues(int nivel)
+    {
         switch (nivel)
         {
             case 0: // Fácil
@@ -582,9 +759,9 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
                     textoCorpoExplicacao.text =
                         "Não se preocupe em errar, faz parte do aprendizado!\n\n" +
                         "Neste nível, treinamos letrinhas que têm sons parecidos:\n" +
-                        "• <b>SS e S:</b> O SS tem som forte e fica entre vogais (ex: PÁSSARO).\n" +
-                        "• <b>CH e X:</b> CH e X têm som de 'ch' (ex: CHAVE e CAIXA).\n" +
-                        "• <b>Ç e C:</b> O Ç só é usado antes de A, O e U!\n\n" +
+                        "- <b>SS e S:</b> O SS tem som forte e fica entre vogais (ex: PÁSSARO).\n" +
+                        "- <b>CH e X:</b> CH e X têm som de 'ch' (ex: CHAVE e CAIXA).\n" +
+                        "- <b>Ç e C:</b> O Ç só é usado antes de A, O e U!\n\n" +
                         "<b>Assista ao vídeo no YouTube ao lado</b> para ver uma aula divertida com desenhos explicando cada regrinha!";
                 }
                 if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Regras do S e SS (Vila Educativa)";
@@ -598,8 +775,8 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
                     textoCorpoExplicacao.text =
                         "Você está evoluindo muito bem!\n\n" +
                         "Nas fases médias, as palavras têm sílabas mais longas e desafiadoras:\n" +
-                        "• Atenção aos encontros de consoantes e sons de <b>Z, X e Ç</b>.\n" +
-                        "• Palavras como <i>PROFESSOR</i>, <i>CHOCOLATE</i> e <i>AMIZADE</i> exigem prestar atenção em cada pedacinho!\n\n" +
+                        "- Atenção aos encontros de consoantes e sons de <b>Z, X e Ç</b>.\n" +
+                        "- Palavras como <i>PROFESSOR</i>, <i>CHOCOLATE</i> e <i>AMIZADE</i> exigem prestar atenção em cada pedacinho!\n\n" +
                         "<b>Abra o vídeo no YouTube ao lado</b> para ver dicas práticas e não errar mais nenhuma palavra!";
                 }
                 if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Sons e Regras da Letra X (Vila Educativa)";
@@ -614,9 +791,9 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
                     textoCorpoExplicacao.text =
                         "O nível difícil traz os maiores segredos do Português!\n\n" +
                         "Aqui você aprende:\n" +
-                        "• <b>Os 4 Porquês:</b> <i>Por que</i> (pergunta), <i>Porque</i> (resposta), <i>Por quê</i> (fim de frase) e <i>Porquê</i> (substantivo).\n" +
-                        "• <b>Classes Gramaticais:</b> Substantivo (nome), Verbo (ação) e Adjetivo (qualidade)!\n" +
-                        "• <b>Mau com U</b> (oposto de bom) e <b>Mal com L</b> (oposto de bem).\n\n" +
+                        "- <b>Os 4 Porquês:</b> <i>Por que</i> (pergunta), <i>Porque</i> (resposta), <i>Por quê</i> (fim de frase) e <i>Porquê</i> (substantivo).\n" +
+                        "- <b>Classes Gramaticais:</b> Substantivo (nome), Verbo (ação) e Adjetivo (qualidade)!\n" +
+                        "- <b>Mau com U</b> (oposto de bom) e <b>Mal com L</b> (oposto de bem).\n\n" +
                         "<b>Clique no vídeo no YouTube ao lado</b> para assistir a uma aula completa e se tornar um mestre!";
                 }
                 if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Substantivo, Adjetivo e Verbo (Vila Educativa)";

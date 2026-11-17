@@ -155,6 +155,18 @@ public class ItchBuildHelper
                 FileInfo zipInfo = new FileInfo(WIN_ZIP_PATH);
                 Debug.Log($"ZIP Windows gerado com sucesso: {WIN_ZIP_PATH} ({zipInfo.Length / (1024 * 1024)} MB)");
 
+                string localBuild = Path.GetFullPath(Path.Combine(Application.dataPath, "../Build"));
+                try
+                {
+                    if (Directory.Exists(localBuild)) Directory.Delete(localBuild, true);
+                    CopiarDiretorio(WIN_BUILD_FOLDER, localBuild);
+                    Debug.Log($"Copia local do build gerada em: {localBuild}");
+                }
+                catch (Exception exLocal)
+                {
+                    Debug.LogWarning("Nao foi possivel duplicar build para ./Build: " + exLocal.Message);
+                }
+
                 if (!Application.isBatchMode)
                 {
                     EditorUtility.DisplayDialog("Sucesso - Windows!",
@@ -262,5 +274,18 @@ public class ItchBuildHelper
         }
 
         return scenes.ToArray();
+    }
+
+    private static void CopiarDiretorio(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)), true);
+        }
+        foreach (var subDir in Directory.GetDirectories(sourceDir))
+        {
+            CopiarDiretorio(subDir, Path.Combine(targetDir, Path.GetFileName(subDir)));
+        }
     }
 }

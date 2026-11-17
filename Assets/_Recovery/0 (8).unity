@@ -52210,7 +52210,7 @@ MonoBehaviour:
     - {fileID: 548187712}
     - {fileID: 75099042}
     textoIndicadorFase: {fileID: 0}
-  vidasMaximas: 3
+  vidasMaximas: 2
   temasDasCartas:
   - {fileID: -6499705525124416175, guid: 4d3d6aa7a29a904418106cbc2c464d18, type: 3}
   - {fileID: 3855802009952304276, guid: 2cbd6cd7c91eb5e4b9ffc6caa0f9335f, type: 3}

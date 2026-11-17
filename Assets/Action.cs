@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using DG.Tweening;
+using TMPro;
 
 public class Action : MonoBehaviour
 {
@@ -102,12 +103,14 @@ public class Action : MonoBehaviour
 
     void Awake()
     {
+        Screen.SetResolution(1920, 1080, FullScreenMode.FullScreenWindow);
         Screen.fullScreen = true;
+        CriarTelaDeCarregamentoInicial();
     }
 
     public static void AjustarProporcaoTelas()
     {
-        // Configura��o mantida est�tica na cena para estabilidade visual perfeita
+        // Configuração mantida estática na cena para estabilidade visual perfeita
     }
 
 
@@ -124,6 +127,11 @@ public class Action : MonoBehaviour
         {
             GameObject gvGO = new GameObject("GerenciadorVideoExplicativo", typeof(GerenciadorVideoExplicativo));
             DontDestroyOnLoad(gvGO);
+        }
+        if (FindFirstObjectByType<AreaDoProfessor>() == null)
+        {
+            GameObject apGO = new GameObject("AreaDoProfessor", typeof(AreaDoProfessor));
+            DontDestroyOnLoad(apGO);
         }
         EsconderGrupo(groupMenu);
         EsconderGrupo(groupDificuldadePortugues);
@@ -160,6 +168,7 @@ public class Action : MonoBehaviour
         VerificarDesbloqueios();
         ConfigurarBotoesTelaPersonagens();
         ConfigurarBotoesGameplayCanvases();
+        ConfigurarBotoesPainelFaseConcluida();
 
         isSoundOn = PlayerPrefs.GetInt("SomMutado", 1) == 1;
         AtualizarIconeMute();
@@ -250,11 +259,13 @@ public class Action : MonoBehaviour
 
     public void VerificarDesbloqueios()
     {
-        bool medioLiberadoPort = GerenciadorPerfis.GetInt("Desbloqueio_Medio_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Medio", 0) == 1;
-        bool dificilLiberadoPort = GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Dificil", 0) == 1;
+        bool isProfessor = AreaDoProfessor.SessaoProfessorAtiva;
 
-        bool medioLiberadoMath = GerenciadorPerfis.GetInt("Desbloqueio_Medio_Math", 0) == 1;
-        bool dificilLiberadoMath = GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Math", 0) == 1;
+        bool medioLiberadoPort = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Medio", 0) == 1;
+        bool dificilLiberadoPort = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Dificil", 0) == 1;
+
+        bool medioLiberadoMath = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Math", 0) == 1;
+        bool dificilLiberadoMath = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Math", 0) == 1;
 
         AtualizarEstadoBotaoDificuldade(botaoMedio, medioLiberadoPort);
         AtualizarEstadoBotaoDificuldade(botaoDificil, dificilLiberadoPort);
@@ -399,6 +410,59 @@ public class Action : MonoBehaviour
         }
     }
 
+    public void ConfigurarBotoesPainelFaseConcluida()
+    {
+        CanvasGroup[] paineis = { groupFaseConcluida, groupProxFaseOuro, groupProxFasePrata, groupProxFaseBronze };
+        foreach (var p in paineis)
+        {
+            if (p == null) continue;
+            try
+            {
+                Button[] botoes = p.GetComponentsInChildren<Button>(true);
+                foreach (var b in botoes)
+                {
+                    string n = b.name.ToLower();
+                    string txt = "";
+                    var tmp = b.GetComponentInChildren<TMPro.TextMeshProUGUI>(true);
+                    if (tmp != null) txt = tmp.text.ToLower();
+                    var legacyTxt = b.GetComponentInChildren<Text>(true);
+                    if (legacyTxt != null) txt += " " + legacyTxt.text.ToLower();
+
+                    if (n.Contains("continuar") || n.Contains("proxim") || n.Contains("continue") || n.Contains("next") || txt.Contains("continuar") || txt.Contains("próxim") || txt.Contains("proxim"))
+                    {
+                        b.onClick.RemoveAllListeners();
+                        b.onClick.AddListener(() =>
+                        {
+                            GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
+                            if (gf != null) gf.BotaoProximaFase();
+                        });
+                    }
+                    else if (n.Contains("menu") || n.Contains("voltar") || n.Contains("sair") || txt.Contains("menu") || txt.Contains("voltar"))
+                    {
+                        b.onClick.RemoveAllListeners();
+                        b.onClick.AddListener(() =>
+                        {
+                            GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
+                            if (gf != null) gf.BotaoSairParaFases();
+                        });
+                    }
+                    else if (n.Contains("trofeu") || n.Contains("trofeus") || txt.Contains("troféu") || txt.Contains("trofeu"))
+                    {
+                        b.onClick.RemoveAllListeners();
+                        b.onClick.AddListener(() =>
+                        {
+                            AbrirTrofeus();
+                        });
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[Action] Aviso ao configurar botões de {p.name}: {ex.Message}");
+            }
+        }
+    }
+
     public void ConfigurarBotoesGameplayCanvases()
     {
         if (spriteCasinha == null) spriteCasinha = Resources.Load<Sprite>("btnCasinha");
@@ -425,98 +489,250 @@ public class Action : MonoBehaviour
 
         for (int i = 0; i < telasJogo.Length; i++)
         {
-            CanvasGroup cg = telasJogo[i];
-            GameObject go = (cg != null) ? cg.gameObject : GameObject.Find(nomesObjetos[i]);
-            if (go == null) continue;
+            try
+            {
+                CanvasGroup cg = telasJogo[i];
+                GameObject go = (cg != null) ? cg.gameObject : GameObject.Find(nomesObjetos[i]);
+                if (go == null) continue;
 
-            ConfigurarBotoesEmCanvasJogo(go);
+                // Correção defensiva para a tela da Patty (Português Difícil):
+                // Patty usa elementos 2D em World Space e Canvases filhos (Canvas_Texto e Canvas_btn) em ScreenSpaceCamera.
+                // Não deve possuir Canvas/CanvasScaler em seu próprio GameObject raiz, pois isso corrompe a hierarquia.
+                if (nomesObjetos[i] == "Patty" || cg == groupJogoDificil)
+                {
+                    Canvas cPatty = go.GetComponent<Canvas>();
+                    if (cPatty != null) Destroy(cPatty);
+                    CanvasScaler csPatty = go.GetComponent<CanvasScaler>();
+                    if (csPatty != null) Destroy(csPatty);
+
+                    Camera camMain = Camera.main;
+                    Canvas[] childCanvases = go.GetComponentsInChildren<Canvas>(true);
+                    foreach (var c in childCanvases)
+                    {
+                        if (c.gameObject.name == "TopBar_BotoesCanvas") continue;
+                        if (c.renderMode == RenderMode.ScreenSpaceCamera)
+                        {
+                            if (c.worldCamera == null && camMain != null) c.worldCamera = camMain;
+                            RectTransform rt = c.GetComponent<RectTransform>();
+                            if (rt != null)
+                            {
+                                rt.anchoredPosition = Vector2.zero;
+                                rt.localPosition = Vector3.zero;
+                            }
+                        }
+                    }
+                }
+
+                ConfigurarBotoesEmCanvasJogo(go);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[Action] Aviso ao configurar botões de gameplay ({nomesObjetos[i]}): {ex.Message}");
+            }
         }
+    }
+
+    private static Sprite s_spriteLampadaCache = null;
+    public static Sprite ObterSpriteLampadaCartoon()
+    {
+        if (s_spriteLampadaCache != null) return s_spriteLampadaCache;
+
+        Sprite spr = Resources.Load<Sprite>("icone_lampada_cartoon");
+        if (spr != null)
+        {
+            s_spriteLampadaCache = spr;
+            return s_spriteLampadaCache;
+        }
+
+        string[] caminhos = {
+            System.IO.Path.Combine(Application.dataPath, "Resources", "icone_lampada_cartoon.png"),
+            System.IO.Path.Combine(Application.dataPath, "Botoes", "icone_lampada_cartoon.png")
+        };
+
+        foreach (var caminho in caminhos)
+        {
+            if (System.IO.File.Exists(caminho))
+            {
+                try
+                {
+                    byte[] bytes = System.IO.File.ReadAllBytes(caminho);
+                    Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    if (tex.LoadImage(bytes))
+                    {
+                        s_spriteLampadaCache = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+                        return s_spriteLampadaCache;
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[Action] Erro ao carregar icone_lampada_cartoon: {ex.Message}");
+                }
+            }
+        }
+        return null;
     }
 
     private void ConfigurarBotoesEmCanvasJogo(GameObject rootJogo)
     {
         if (rootJogo == null) return;
 
-
-        Transform container = rootJogo.transform.Find("Canvas_btn");
-        if (container == null)
+        // 0. Desativa botões legados ou corrompidos que possam ter ficado dentro de Canvas_btn (onde escala era ~0 em Matemática)
+        Transform oldContainer = rootJogo.transform.Find("Canvas_btn");
+        if (oldContainer != null)
         {
-            Canvas[] canvases = rootJogo.GetComponentsInChildren<Canvas>(true);
-            foreach (var c in canvases)
-            {
-                if (c.name.Contains("btn"))
-                {
-                    container = c.transform;
-                    break;
-                }
-            }
-            if (container == null && canvases.Length > 0)
-            {
-                container = canvases[0].transform;
-            }
+            Transform oldC = oldContainer.Find("btnCasinha");
+            if (oldC != null) oldC.gameObject.SetActive(false);
+            Transform oldE = oldContainer.Find("btnEngrenagem");
+            if (oldE != null) oldE.gameObject.SetActive(false);
+            Transform oldD = oldContainer.Find("btnDica");
+            if (oldD != null) oldD.gameObject.SetActive(false);
         }
 
-        if (container == null) return;
-
-      
-        Transform tCasinha = container.Find("btnCasinha");
-        if (tCasinha == null)
+        // Limpa badge legado que possa ter sido instanciado diretamente no root de gameplay
+        Transform oldDirectBadge = rootJogo.transform.Find("IndicadorFaseBadge");
+        if (oldDirectBadge != null)
         {
-            GameObject gCasinha = new GameObject("btnCasinha");
-            gCasinha.transform.SetParent(container, false);
-            tCasinha = gCasinha.transform;
+            Destroy(oldDirectBadge.gameObject);
+        }
+        Transform oldFaseTxt = rootJogo.transform.Find("Fase");
+        if (oldFaseTxt != null)
+        {
+            oldFaseTxt.gameObject.SetActive(false);
         }
 
-        RectTransform rtCasinha = tCasinha.GetComponent<RectTransform>();
-        if (rtCasinha == null) rtCasinha = tCasinha.gameObject.AddComponent<RectTransform>();
+        // 1. Procura ou cria o container de TopBar sob rootJogo com Canvas Overlay próprio
+        // Isso garante 100% que os botões apareçam em todas as telas (Matemática Arthur/Gabriela/Mãe e Português Zé/Fernanda/Patty)
+        Transform tBarra = rootJogo.transform.Find("TopBar_BotoesCanvas");
+        GameObject gBarra;
+        if (tBarra == null)
+        {
+            gBarra = new GameObject("TopBar_BotoesCanvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+            gBarra.transform.SetParent(rootJogo.transform, false);
+        }
+        else
+        {
+            gBarra = tBarra.gameObject;
+        }
+
+        Canvas canvasBarra = gBarra.GetComponent<Canvas>();
+        if (canvasBarra == null) canvasBarra = gBarra.AddComponent<Canvas>();
+        canvasBarra.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvasBarra.sortingOrder = 500; // Acima de qualquer elemento de gameplay, abaixo de modais popup (1000)
+
+        CanvasScaler scaler = gBarra.GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = gBarra.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+
+        GraphicRaycaster gr = gBarra.GetComponent<GraphicRaycaster>();
+        if (gr == null) gBarra.AddComponent<GraphicRaycaster>();
+
+        RectTransform rtBarra = gBarra.GetComponent<RectTransform>();
+        rtBarra.anchorMin = Vector2.zero;
+        rtBarra.anchorMax = Vector2.one;
+        rtBarra.offsetMin = Vector2.zero;
+        rtBarra.offsetMax = Vector2.zero;
+        rtBarra.localScale = Vector3.one;
+
+        // 2. Botão Casinha (Voltar ao Lobby)
+        Transform tCasinha = gBarra.transform.Find("btnCasinha");
+        GameObject gCasinha = (tCasinha != null) ? tCasinha.gameObject : null;
+        if (gCasinha == null)
+        {
+            gCasinha = new GameObject("btnCasinha", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            gCasinha.transform.SetParent(gBarra.transform, false);
+        }
+
+        RectTransform rtCasinha = gCasinha.GetComponent<RectTransform>();
         rtCasinha.anchorMin = new Vector2(0f, 1f);
         rtCasinha.anchorMax = new Vector2(0f, 1f);
         rtCasinha.pivot = new Vector2(0.5f, 0.5f);
-        rtCasinha.anchoredPosition = new Vector2(100f, -80f);
-        rtCasinha.sizeDelta = new Vector2(100f, 100f);
+        rtCasinha.anchoredPosition = new Vector2(90f, -75f);
+        rtCasinha.sizeDelta = new Vector2(95f, 95f);
         rtCasinha.localScale = Vector3.one;
 
-        Image imgCasinha = tCasinha.GetComponent<Image>();
-        if (imgCasinha == null) imgCasinha = tCasinha.gameObject.AddComponent<Image>();
+        Image imgCasinha = gCasinha.GetComponent<Image>();
+        if (spriteCasinha == null) spriteCasinha = Resources.Load<Sprite>("btnCasinha");
         if (spriteCasinha != null) imgCasinha.sprite = spriteCasinha;
         imgCasinha.color = Color.white;
         imgCasinha.raycastTarget = true;
         imgCasinha.preserveAspect = true;
 
-        Button btnCasinha = tCasinha.GetComponent<Button>();
-        if (btnCasinha == null) btnCasinha = tCasinha.gameObject.AddComponent<Button>();
+        Button btnCasinha = gCasinha.GetComponent<Button>();
         btnCasinha.onClick.RemoveAllListeners();
         btnCasinha.onClick.AddListener(VoltarParaLobby);
 
-        
-        Transform tEng = container.Find("btnEngrenagem");
-        if (tEng == null)
+        // 3. Botão Engrenagem (Configurações)
+        Transform tEng = gBarra.transform.Find("btnEngrenagem");
+        GameObject gEng = (tEng != null) ? tEng.gameObject : null;
+        if (gEng == null)
         {
-            GameObject gEng = new GameObject("btnEngrenagem");
-            gEng.transform.SetParent(container, false);
-            tEng = gEng.transform;
+            gEng = new GameObject("btnEngrenagem", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            gEng.transform.SetParent(gBarra.transform, false);
         }
 
-        RectTransform rtEng = tEng.GetComponent<RectTransform>();
-        if (rtEng == null) rtEng = tEng.gameObject.AddComponent<RectTransform>();
+        RectTransform rtEng = gEng.GetComponent<RectTransform>();
         rtEng.anchorMin = new Vector2(0f, 1f);
         rtEng.anchorMax = new Vector2(0f, 1f);
         rtEng.pivot = new Vector2(0.5f, 0.5f);
-        rtEng.anchoredPosition = new Vector2(220f, -80f);
-        rtEng.sizeDelta = new Vector2(100f, 100f);
+        rtEng.anchoredPosition = new Vector2(205f, -75f);
+        rtEng.sizeDelta = new Vector2(95f, 95f);
         rtEng.localScale = Vector3.one;
 
-        Image imgEng = tEng.GetComponent<Image>();
-        if (imgEng == null) imgEng = tEng.gameObject.AddComponent<Image>();
+        Image imgEng = gEng.GetComponent<Image>();
+        if (spriteEngrenagem == null) spriteEngrenagem = Resources.Load<Sprite>("btnEngrenagem");
         if (spriteEngrenagem != null) imgEng.sprite = spriteEngrenagem;
         imgEng.color = Color.white;
         imgEng.raycastTarget = true;
         imgEng.preserveAspect = true;
 
-        Button btnEng = tEng.GetComponent<Button>();
-        if (btnEng == null) btnEng = tEng.gameObject.AddComponent<Button>();
+        Button btnEng = gEng.GetComponent<Button>();
         btnEng.onClick.RemoveAllListeners();
         btnEng.onClick.AddListener(Config);
+
+        // 4. Botão Dica / Lâmpada Cartoon (com sprite nítido)
+        Transform tDica = gBarra.transform.Find("btnDica");
+        GameObject gDica = (tDica != null) ? tDica.gameObject : null;
+        if (gDica == null)
+        {
+            gDica = new GameObject("btnDica", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            gDica.transform.SetParent(gBarra.transform, false);
+        }
+
+        RectTransform rtDica = gDica.GetComponent<RectTransform>();
+        rtDica.anchorMin = new Vector2(0f, 1f);
+        rtDica.anchorMax = new Vector2(0f, 1f);
+        rtDica.pivot = new Vector2(0.5f, 0.5f);
+        rtDica.anchoredPosition = new Vector2(320f, -75f);
+        rtDica.sizeDelta = new Vector2(100f, 100f);
+        rtDica.localScale = Vector3.one;
+
+        Image imgDica = gDica.GetComponent<Image>();
+        Sprite sprLampada = ObterSpriteLampadaCartoon();
+        if (sprLampada != null)
+        {
+            imgDica.sprite = sprLampada;
+            imgDica.preserveAspect = true;
+            imgDica.color = Color.white;
+        }
+        else
+        {
+            Sprite fallbackSpr = Resources.Load<Sprite>("badge_lobby_jogo") ?? Resources.Load<Sprite>("btn_laranja_jogo");
+            if (fallbackSpr != null) imgDica.sprite = fallbackSpr;
+            imgDica.color = new Color(1f, 0.85f, 0.15f, 1f);
+        }
+        imgDica.raycastTarget = true;
+
+        Button btnDica = gDica.GetComponent<Button>();
+        btnDica.onClick.RemoveAllListeners();
+        btnDica.onClick.AddListener(AbrirVideoExplicativo);
+
+        Transform tTxtDica = gDica.transform.Find("TextoDica");
+        if (tTxtDica != null)
+        {
+            tTxtDica.gameObject.SetActive(false);
+        }
     }
 
     public void BtnFacil()
@@ -921,4 +1137,196 @@ public class Action : MonoBehaviour
         RestaurarMusicaLobby();
         TrocarTela(groupFinalJogo, groupCreditos != null ? groupCreditos : groupLobby);
     }
+
+    #region Tela de Carregamento em Tela Cheia (Startup Splash)
+    private void CriarTelaDeCarregamentoInicial()
+    {
+        // Cria Canvas de Carregamento em Tela Cheia no topo de tudo
+        GameObject loadingGO = new GameObject("TelaCarregamento_Canvas");
+        Canvas canvas = loadingGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 32760;
+
+        CanvasScaler scaler = loadingGO.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920, 1080);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+
+        loadingGO.AddComponent<GraphicRaycaster>();
+        CanvasGroup cg = loadingGO.AddComponent<CanvasGroup>();
+        cg.alpha = 1f;
+        cg.blocksRaycasts = true;
+
+        // Fundo em Tela Cheia (1920x1080)
+        GameObject bgGO = new GameObject("FundoCarregamento", typeof(RectTransform), typeof(Image));
+        bgGO.transform.SetParent(loadingGO.transform, false);
+        RectTransform bgRT = bgGO.GetComponent<RectTransform>();
+        bgRT.anchorMin = Vector2.zero;
+        bgRT.anchorMax = Vector2.one;
+        bgRT.offsetMin = Vector2.zero;
+        bgRT.offsetMax = Vector2.zero;
+
+        Image bgImg = bgGO.GetComponent<Image>();
+        Sprite splashSprite = Resources.Load<Sprite>("TelaCarregamento");
+        if (splashSprite == null)
+        {
+            Sprite[] sprites = Resources.FindObjectsOfTypeAll<Sprite>();
+            foreach (var s in sprites)
+            {
+                if (s != null && s.name.Contains("TelaCarregamento"))
+                {
+                    splashSprite = s;
+                    break;
+                }
+            }
+        }
+
+        if (splashSprite != null)
+        {
+            bgImg.sprite = splashSprite;
+            bgImg.color = Color.white;
+            bgImg.preserveAspect = false; // Cobre 100% da tela em tela cheia
+        }
+        else
+        {
+            bgImg.color = new Color(0.18f, 0.65f, 0.95f, 1f);
+        }
+
+        // Container inferior para escrita de carregamento e barra de progresso
+        GameObject contGO = new GameObject("ContainerTextoCarregamento", typeof(RectTransform), typeof(Image));
+        contGO.transform.SetParent(loadingGO.transform, false);
+        RectTransform contRT = contGO.GetComponent<RectTransform>();
+        contRT.anchorMin = new Vector2(0.5f, 0f);
+        contRT.anchorMax = new Vector2(0.5f, 0f);
+        contRT.pivot = new Vector2(0.5f, 0.5f);
+        contRT.anchoredPosition = new Vector2(0, 125);
+        contRT.sizeDelta = new Vector2(820, 140);
+
+        Image contImg = contGO.GetComponent<Image>();
+        Sprite cardFundo = Resources.Load<Sprite>("card_aluno_fundo_jogo");
+        if (cardFundo != null)
+        {
+            contImg.sprite = cardFundo;
+            contImg.type = Image.Type.Sliced;
+            contImg.color = new Color(0.06f, 0.14f, 0.25f, 0.92f);
+        }
+        else
+        {
+            contImg.color = new Color(0.06f, 0.14f, 0.25f, 0.92f);
+        }
+
+        TMP_FontAsset fonteCrayon = Resources.Load<TMP_FontAsset>("CrayonHandRegular2016Demo SDF");
+
+        // Escrita Principal de Carregamento
+        GameObject txtTituloGO = new GameObject("TextoCarregando", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtTituloGO.transform.SetParent(contGO.transform, false);
+        RectTransform txtTituloRT = txtTituloGO.GetComponent<RectTransform>();
+        txtTituloRT.anchorMin = new Vector2(0f, 0.52f);
+        txtTituloRT.anchorMax = new Vector2(1f, 1f);
+        txtTituloRT.offsetMin = new Vector2(10, 0);
+        txtTituloRT.offsetMax = new Vector2(-10, -5);
+
+        TextMeshProUGUI txtTitulo = txtTituloGO.GetComponent<TextMeshProUGUI>();
+        if (fonteCrayon != null) txtTitulo.font = fonteCrayon;
+        txtTitulo.fontSize = 44;
+        txtTitulo.alignment = TextAlignmentOptions.Center;
+        txtTitulo.color = new Color(1f, 0.92f, 0.22f, 1f); // Amarelo vibrante cartoon
+        txtTitulo.text = "CARREGANDO...";
+
+        // Subtítulo de Carregamento
+        GameObject txtSubGO = new GameObject("TextoSubtitulo", typeof(RectTransform), typeof(TextMeshProUGUI));
+        txtSubGO.transform.SetParent(contGO.transform, false);
+        RectTransform txtSubRT = txtSubGO.GetComponent<RectTransform>();
+        txtSubRT.anchorMin = new Vector2(0f, 0.22f);
+        txtSubRT.anchorMax = new Vector2(1f, 0.55f);
+        txtSubRT.offsetMin = new Vector2(10, 0);
+        txtSubRT.offsetMax = new Vector2(-10, 0);
+
+        TextMeshProUGUI txtSub = txtSubGO.GetComponent<TextMeshProUGUI>();
+        if (fonteCrayon != null) txtSub.font = fonteCrayon;
+        txtSub.fontSize = 22;
+        txtSub.alignment = TextAlignmentOptions.Center;
+        txtSub.color = new Color(0.92f, 0.96f, 1f, 0.95f);
+        txtSub.text = "Por favor, aguarde... Preparando as letrinhas e lições!";
+
+        // Fundo da Barra de Progresso
+        GameObject barBgGO = new GameObject("BarraFundo", typeof(RectTransform), typeof(Image));
+        barBgGO.transform.SetParent(contGO.transform, false);
+        RectTransform barBgRT = barBgGO.GetComponent<RectTransform>();
+        barBgRT.anchorMin = new Vector2(0.5f, 0f);
+        barBgRT.anchorMax = new Vector2(0.5f, 0f);
+        barBgRT.pivot = new Vector2(0.5f, 0.5f);
+        barBgRT.anchoredPosition = new Vector2(0, 20);
+        barBgRT.sizeDelta = new Vector2(680, 14);
+
+        Image barBgImg = barBgGO.GetComponent<Image>();
+        barBgImg.color = new Color(0f, 0f, 0f, 0.6f);
+
+        // Preenchimento da Barra de Progresso
+        GameObject barFillGO = new GameObject("BarraPreenchimento", typeof(RectTransform), typeof(Image));
+        barFillGO.transform.SetParent(barBgGO.transform, false);
+        RectTransform barFillRT = barFillGO.GetComponent<RectTransform>();
+        barFillRT.anchorMin = Vector2.zero;
+        barFillRT.anchorMax = Vector2.one;
+        barFillRT.offsetMin = Vector2.zero;
+        barFillRT.offsetMax = Vector2.zero;
+
+        Image barFillImg = barFillGO.GetComponent<Image>();
+        barFillImg.type = Image.Type.Filled;
+        barFillImg.fillMethod = Image.FillMethod.Horizontal;
+        barFillImg.fillOrigin = (int)Image.OriginHorizontal.Left;
+        barFillImg.fillAmount = 0.05f;
+        barFillImg.color = new Color(0.18f, 0.88f, 0.42f, 1f); // Verde gamer animado
+
+        StartCoroutine(RotinaAnimacaoCarregamento(cg, txtTitulo, txtSub, barFillImg, loadingGO));
+    }
+
+    private System.Collections.IEnumerator RotinaAnimacaoCarregamento(CanvasGroup cg, TextMeshProUGUI txtTitulo, TextMeshProUGUI txtSub, Image barFill, GameObject loadingGO)
+    {
+        float duracao = 2.4f;
+        float decorrido = 0f;
+        string[] animFrames = new string[] { "CARREGANDO.", "CARREGANDO..", "CARREGANDO..." };
+        int frameIdx = 0;
+        float timerFrame = 0f;
+
+        while (decorrido < duracao)
+        {
+            decorrido += Time.deltaTime;
+            timerFrame += Time.deltaTime;
+
+            if (timerFrame >= 0.28f)
+            {
+                timerFrame = 0f;
+                frameIdx = (frameIdx + 1) % animFrames.Length;
+                if (txtTitulo != null) txtTitulo.text = animFrames[frameIdx];
+            }
+
+            if (barFill != null)
+            {
+                barFill.fillAmount = Mathf.Clamp01(decorrido / duracao);
+            }
+
+            yield return null;
+        }
+
+        if (barFill != null) barFill.fillAmount = 1f;
+        if (txtTitulo != null) txtTitulo.text = "TUDO PRONTO!";
+        if (txtSub != null) txtSub.text = "Bem-vindo à Revolta das Letrinhas!";
+
+        yield return new WaitForSeconds(0.35f);
+
+        if (cg != null)
+        {
+            cg.DOFade(0f, 0.6f).OnComplete(() =>
+            {
+                if (loadingGO != null) Destroy(loadingGO);
+            });
+        }
+        else
+        {
+            if (loadingGO != null) Destroy(loadingGO);
+        }
+    }
+    #endregion
 }

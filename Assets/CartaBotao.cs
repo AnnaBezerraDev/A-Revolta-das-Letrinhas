@@ -57,8 +57,22 @@ public class CartaBotao : MonoBehaviour
     
     public void ClicarNaCarta()
     {
+        if (gameManager == null) gameManager = GameManager.Instance ?? FindFirstObjectByType<GameManager>();
+
         if (gameManager != null && textoDaCarta != null)
         {
+            if (!gameManager.PodeInteragir)
+            {
+                Debug.Log($"[CartaBotao] Clique ignorado pois a interação ainda está bloqueada.");
+                return;
+            }
+
+            if (Time.time - gameManager.TempoUltimoClique < 0.35f)
+            {
+                Debug.Log($"[CartaBotao] Clique ignorado por debounce de tempo.");
+                return;
+            }
+
             Debug.Log($"[INVESTIGAÇÃO] Você clicou no botão: '{gameObject.name}' | Do Canvas pai: '{GetComponentInParent<Canvas>().gameObject.name}' | E o texto dele é: '{textoDaCarta.text}'");
 
             gameManager.VerificarResposta(textoDaCarta.text);

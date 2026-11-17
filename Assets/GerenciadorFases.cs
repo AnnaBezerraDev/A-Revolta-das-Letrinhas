@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections.Generic;
@@ -165,7 +165,7 @@ public class GerenciadorFases : MonoBehaviour
         
     }
 
-    void ConfigurarTodosBotoes()
+    public void ConfigurarTodosBotoes()
     {
         if (botoesFaseAtivos == null || botoesFaseAtivos.Count == 0) return;
 
@@ -392,6 +392,7 @@ public class GerenciadorFases : MonoBehaviour
 
     bool VerificarFaseDisponivel(int numeroFase)
     {
+        if (AreaDoProfessor.SessaoProfessorAtiva) return true;
         if (numeroFase == 0) return true;
         return GerenciadorPerfis.GetInt($"FaseCompleta_{GetPrefixoSave()}_{nivelAtual}_{numeroFase - 1}", 0) == 1;
     }
@@ -479,9 +480,15 @@ public class GerenciadorFases : MonoBehaviour
         return completas;
     }
 
+    private float tempoUltimoAvanco = 0f;
+
     public void BotaoProximaFase()
     {
+        if (Time.time - tempoUltimoAvanco < 0.5f) return;
+        tempoUltimoAvanco = Time.time;
+
         Action actionScript = FindFirstObjectByType<Action>();
+        GameManager gm = GameManager.Instance ?? FindFirstObjectByType<GameManager>();
 
         if (actionScript != null)
         {
@@ -489,39 +496,78 @@ public class GerenciadorFases : MonoBehaviour
             actionScript.TocarMusicaPersonagens();
         }
 
-        CanvasGroup painelAtivo = actionScript.GetPainelConclusaoAtivo();
+        CanvasGroup painelAtivo = actionScript != null ? actionScript.GetPainelConclusaoAtivo() : null;
 
-        if (faseAtualJogando == 29)
+        // Sincroniza estado exato com GameManager para precisão absoluta
+        int faseAtual = (gm != null) ? gm.FaseAtualID : faseAtualJogando;
+        int nivel = (gm != null) ? gm.NivelAtualID : nivelAtual;
+        bool isMath = (gm != null) ? gm.JogandoMatematica : (actionScript != null && actionScript.telaDificuldadeAtual == actionScript.groupDificuldadeMatematica);
+
+        nivelAtual = nivel;
+        faseAtualJogando = faseAtual;
+
+        if (faseAtual >= 29)
         {
-            bool isMath = (actionScript.telaDificuldadeAtual == actionScript.groupDificuldadeMatematica);
-
-            if (nivelAtual == 0)
+            if (nivel == 0)
             {
                 GerenciadorPerfis.SetInt($"Desbloqueio_Medio_{GetPrefixoSave()}", 1);
                 PlayerPrefs.Save();
                 DefinirNivel(1);
 
                 CanvasGroup telaDestino = isMath ? actionScript.groupFasesMathMedio : actionScript.groupFasesMedio;
-                actionScript.TrocarTela(painelAtivo, telaDestino);
+                if (actionScript != null && painelAtivo != null) actionScript.TrocarTela(painelAtivo, telaDestino);
             }
-            else if (nivelAtual == 1)
+            else if (nivel == 1)
             {
                 GerenciadorPerfis.SetInt($"Desbloqueio_Dificil_{GetPrefixoSave()}", 1);
                 PlayerPrefs.Save();
                 DefinirNivel(2);
 
                 CanvasGroup telaDestino = isMath ? actionScript.groupFasesMathDificil : actionScript.groupFasesDificil;
-                actionScript.TrocarTela(painelAtivo, telaDestino);
+                if (actionScript != null && painelAtivo != null) actionScript.TrocarTela(painelAtivo, telaDestino);
             }
-            else if (nivelAtual == 2)
+            else if (nivel == 2)
             {
-                actionScript.TrocarTela(painelAtivo, actionScript.telaDificuldadeAtual);
+                if (actionScript != null && painelAtivo != null) actionScript.TrocarTela(painelAtivo, actionScript.telaDificuldadeAtual);
             }
             return;
         }
 
-        actionScript.TrocarTela(painelAtivo, GetTelaJogo());
-        IniciarFaseEspecifica(faseAtualJogando + 1);
+        int proximaFase = faseAtual + 1;
+        faseAtualJogando = proximaFase;
+
+        // Desativa o painel de vitória e transiciona para a tela de jogo de forma segura
+        CanvasGroup telaJogo = GetTelaJogo();
+        if (actionScript != null)
+        {
+            try
+            {
+                if (painelAtivo != null)
+                {
+                    painelAtivo.interactable = false;
+                    painelAtivo.blocksRaycasts = false;
+                    actionScript.TrocarTela(painelAtivo, telaJogo);
+                }
+                else if (telaJogo != null)
+                {
+                    actionScript.TrocarTela(null, telaJogo);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[GerenciadorFases] Aviso na transição de tela: {ex.Message}");
+            }
+        }
+
+        // Inicia a nova fase com a nova palavra/continha com 100% de garantia
+        if (gm != null)
+        {
+            gm.IniciarFaseEspecifica(proximaFase, nivel, isMath);
+        }
+        else
+        {
+            IniciarFaseEspecifica(proximaFase);
+        }
     }
 
     public void BotaoTentarNovamente()
@@ -562,26 +608,28 @@ public class GerenciadorFases : MonoBehaviour
         Action action = FindFirstObjectByType<Action>();
         if (action == null) return null;
 
-        bool isMath = (action.telaDificuldadeAtual == action.groupDificuldadeMatematica);
+        GameManager gm = FindFirstObjectByType<GameManager>();
+        bool isMath = (gm != null) ? gm.JogandoMatematica : (action.telaDificuldadeAtual == action.groupDificuldadeMatematica);
+        int nivel = (gm != null) ? gm.NivelAtualID : nivelAtual;
 
         if (isMath)
         {
-            switch (nivelAtual)
+            switch (nivel)
             {
                 case 0: return action.groupJogoMathFacil;
                 case 1: return action.groupJogoMathMedio;
                 case 2: return action.groupJogoMathDificil;
-                default: return null;
+                default: return action.groupJogoMathFacil;
             }
         }
         else
         {
-            switch (nivelAtual)
+            switch (nivel)
             {
                 case 0: return action.groupJogoFacil;
                 case 1: return action.groupJogoMedio;
                 case 2: return action.groupJogoDificil;
-                default: return null;
+                default: return action.groupJogoFacil;
             }
         }
     }
@@ -591,26 +639,28 @@ public class GerenciadorFases : MonoBehaviour
         Action action = FindFirstObjectByType<Action>();
         if (action == null) return null;
 
-        bool isMath = (action.telaDificuldadeAtual == action.groupDificuldadeMatematica);
+        GameManager gm = FindFirstObjectByType<GameManager>();
+        bool isMath = (gm != null) ? gm.JogandoMatematica : (action.telaDificuldadeAtual == action.groupDificuldadeMatematica);
+        int nivel = (gm != null) ? gm.NivelAtualID : nivelAtual;
 
         if (isMath)
         {
-            switch (nivelAtual)
+            switch (nivel)
             {
                 case 0: return action.groupFasesMathFacil;
                 case 1: return action.groupFasesMathMedio;
                 case 2: return action.groupFasesMathDificil;
-                default: return null;
+                default: return action.groupFasesMathFacil;
             }
         }
         else
         {
-            switch (nivelAtual)
+            switch (nivel)
             {
                 case 0: return action.groupFasesFacil;
                 case 1: return action.groupFasesMedio;
                 case 2: return action.groupFasesDificil;
-                default: return null;
+                default: return action.groupFasesFacil;
             }
         }
     }

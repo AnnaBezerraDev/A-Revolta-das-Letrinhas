@@ -319,17 +319,35 @@ public class GerenciadorPerfis : MonoBehaviour
     {
         string prefixo = $"P_{SanitizarNome(nomeAluno)}_";
         int total = 0;
-        string[] materias = new string[] { "Matematica", "Portugues" };
-        string[] niveis = new string[] { "Facil", "Medio", "Dificil" };
+        string[] materias = new string[] { "Port", "Math" };
 
-        foreach (var mat in materias)
+        for (int m = 0; m < materias.Length; m++)
         {
-            foreach (var niv in niveis)
+            string mat = materias[m];
+            for (int niv = 0; niv < 3; niv++)
             {
-                for (int f = 1; f <= 30; f++)
+                for (int f = 0; f < 30; f++)
                 {
                     if (PlayerPrefs.GetInt($"{prefixo}FaseCompleta_{mat}_{niv}_{f}", 0) == 1)
                         total++;
+                }
+            }
+        }
+
+        // Fallback para chaves com nomes por extenso (se houver migração legada)
+        if (total == 0)
+        {
+            string[] materiasLegadas = new string[] { "Matematica", "Portugues" };
+            string[] niveisLegados = new string[] { "Facil", "Medio", "Dificil" };
+            foreach (var mat in materiasLegadas)
+            {
+                foreach (var niv in niveisLegados)
+                {
+                    for (int f = 1; f <= 30; f++)
+                    {
+                        if (PlayerPrefs.GetInt($"{prefixo}FaseCompleta_{mat}_{niv}_{f}", 0) == 1)
+                            total++;
+                    }
                 }
             }
         }
@@ -664,6 +682,47 @@ public class GerenciadorPerfis : MonoBehaviour
 
         Button btnFechar = goFechar.GetComponent<Button>();
         btnFechar.onClick.AddListener(FecharModalPerfis);
+
+        // Botão de atalho para Área do Professor no canto superior esquerdo da janela
+        GameObject goBtnProf = new GameObject("BtnAtalhoProfessor", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goBtnProf.transform.SetParent(janela.transform, false);
+        RectTransform rtProf = goBtnProf.GetComponent<RectTransform>();
+        rtProf.anchorMin = new Vector2(0f, 1f);
+        rtProf.anchorMax = new Vector2(0f, 1f);
+        rtProf.pivot = new Vector2(0f, 1f);
+        rtProf.anchoredPosition = new Vector2(45f, -44f);
+        rtProf.sizeDelta = new Vector2(240f, 50f);
+
+        Image imgProf = goBtnProf.GetComponent<Image>();
+        imgProf.color = new Color(0.12f, 0.28f, 0.58f, 0.95f);
+        if (spriteBtnContinuar != null)
+        {
+            imgProf.sprite = spriteBtnContinuar;
+            imgProf.type = Image.Type.Sliced;
+            imgProf.color = Color.white;
+        }
+
+        Button bProf = goBtnProf.GetComponent<Button>();
+        bProf.onClick.AddListener(() =>
+        {
+            FecharModalPerfis();
+            AreaDoProfessor ap = FindFirstObjectByType<AreaDoProfessor>();
+            if (ap != null) ap.AbrirAreaDoProfessor();
+        });
+
+        GameObject txtProf = new GameObject("Texto", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        txtProf.transform.SetParent(goBtnProf.transform, false);
+        RectTransform rtTProf = txtProf.GetComponent<RectTransform>();
+        rtTProf.anchorMin = Vector2.zero;
+        rtTProf.anchorMax = Vector2.one;
+        rtTProf.sizeDelta = Vector2.zero;
+
+        TextMeshProUGUI tmpProf = txtProf.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpProf.font = fontJogo;
+        tmpProf.text = "<b>🎓 ÁREA DO PROFESSOR</b>";
+        tmpProf.fontSize = 18;
+        tmpProf.alignment = TextAlignmentOptions.Center;
+        tmpProf.color = Color.white;
 
         if (spriteXFechar == null)
         {

@@ -21813,7 +21813,7 @@ MonoBehaviour:
     - {fileID: 1632763829}
     painelObjeto: {fileID: 648453837}
     imagemFundoCarta: {fileID: 1069981318}
-  vidasMaximas: 3
+  vidasMaximas: 2
   iconesVidas:
   - {fileID: 925857761}
   - {fileID: 1100630886}
