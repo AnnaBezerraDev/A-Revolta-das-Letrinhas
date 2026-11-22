@@ -902,7 +902,11 @@ public class Action : MonoBehaviour
         if (entrar != null)
         {
             entrar.gameObject.SetActive(true);
-            if (entrar.transform.localScale == Vector3.zero) entrar.transform.localScale = Vector3.one;
+            Canvas cEntrar = entrar.GetComponent<Canvas>();
+            if ((cEntrar == null || cEntrar.renderMode == RenderMode.WorldSpace) && entrar.transform.localScale == Vector3.zero)
+            {
+                entrar.transform.localScale = Vector3.one;
+            }
             entrar.alpha = 0;
             entrar.interactable = true;
             entrar.blocksRaycasts = true;
@@ -923,7 +927,11 @@ public class Action : MonoBehaviour
         {
             gp.alpha = 1;
             gp.gameObject.SetActive(true);
-            if (gp.transform.localScale == Vector3.zero) gp.transform.localScale = Vector3.one;
+            Canvas c = gp.GetComponent<Canvas>();
+            if ((c == null || c.renderMode == RenderMode.WorldSpace) && gp.transform.localScale == Vector3.zero)
+            {
+                gp.transform.localScale = Vector3.one;
+            }
         }
     }
 

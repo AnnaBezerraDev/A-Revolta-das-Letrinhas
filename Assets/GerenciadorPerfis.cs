@@ -755,7 +755,7 @@ public class GerenciadorPerfis : MonoBehaviour
 
         TextMeshProUGUI tmpProf = txtProf.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpProf.font = fontJogo;
-        tmpProf.text = "<b>🎓 ÁREA DO PROFESSOR</b>";
+        tmpProf.text = "<b>ÁREA DO PROFESSOR</b>";
         tmpProf.fontSize = 18;
         tmpProf.alignment = TextAlignmentOptions.Center;
         tmpProf.color = Color.white;
@@ -832,8 +832,8 @@ public class GerenciadorPerfis : MonoBehaviour
 
         TextMeshProUGUI tmpPlaceP = placeholderP.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpPlaceP.font = fontJogo;
-        tmpPlaceP.text = "🔍  Pesquisar aluno por nome...";
-        tmpPlaceP.fontSize = 22;
+        tmpPlaceP.text = "Pesquisar aluno por nome...";
+        tmpPlaceP.fontSize = 20;
         tmpPlaceP.fontStyle = FontStyles.Italic;
         tmpPlaceP.alignment = TextAlignmentOptions.MidlineLeft;
         tmpPlaceP.color = new Color(0.48f, 0.42f, 0.35f, 0.85f);
@@ -893,7 +893,7 @@ public class GerenciadorPerfis : MonoBehaviour
         rtTL.sizeDelta = Vector2.zero;
         TextMeshProUGUI tmpTL = txtLimpar.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpTL.font = fontJogo;
-        tmpTL.text = "✖";
+        tmpTL.text = "X";
         tmpTL.fontSize = 18;
         tmpTL.alignment = TextAlignmentOptions.Center;
         tmpTL.color = Color.white;
@@ -1148,7 +1148,7 @@ public class GerenciadorPerfis : MonoBehaviour
         {
             if (textoAvisoNovoAluno != null)
             {
-                textoAvisoNovoAluno.text = $"⚠️ Esse nome já existe! Adicione a turma ou sobrenome (ex: {nome} 2º Ano)";
+                textoAvisoNovoAluno.text = $"Atenção: Esse nome já existe! Adicione a turma ou sobrenome (ex: {nome} 2º Ano)";
             }
             inputNomeNovoAluno.ActivateInputField();
             return;
@@ -1157,7 +1157,7 @@ public class GerenciadorPerfis : MonoBehaviour
         {
             if (textoAvisoNovoAluno != null)
             {
-                textoAvisoNovoAluno.text = "⚠️ Digite pelo menos 2 letras para o nome do aluno!";
+                textoAvisoNovoAluno.text = "Atenção: Digite pelo menos 2 letras para o nome do aluno!";
             }
             inputNomeNovoAluno.ActivateInputField();
             return;
@@ -1319,12 +1319,16 @@ public class GerenciadorPerfis : MonoBehaviour
         rtInfo.offsetMax = new Vector2(-360f, 0f);
 
         int concluidas = ObterTotalFasesConcluidas(nome);
-        string statusTag = isAtivo ? "   <color=#E65100><b>[JOGANDO AGORA]</b></color>" : "";
-        string textoProgresso = concluidas == 0 ? "<color=#8D6E63>Novo aluno   •   Nenhuma fase jogada ainda</color>" : $"<color=#2E7D32><b>⭐ {concluidas} fases concluídas</b></color>";
+        string statusTag = isAtivo ? "  <color=#E65100><b>[JOGANDO AGORA]</b></color>" : "";
+        string textoProgresso = concluidas == 0 ? "<color=#8D6E63>Novo aluno - Nenhuma fase jogada ainda</color>" : $"<color=#2E7D32><b>Fases concluídas: {concluidas}/60</b></color>";
 
         TextMeshProUGUI tmpInfo = goInfo.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpInfo.font = fontJogo;
-        tmpInfo.text = $"<size=26><b>{nome}</b></size>{statusTag}\n<size=18>{textoProgresso}</size>";
+        tmpInfo.enableAutoSizing = true;
+        tmpInfo.fontSizeMin = 13f;
+        tmpInfo.fontSizeMax = 20f;
+        tmpInfo.lineSpacing = -8f;
+        tmpInfo.text = $"<b>{nome}</b>{statusTag}\n<size=15>{textoProgresso}</size>";
         tmpInfo.alignment = TextAlignmentOptions.MidlineLeft;
         tmpInfo.color = new Color(0.18f, 0.11f, 0.05f, 1f);
 

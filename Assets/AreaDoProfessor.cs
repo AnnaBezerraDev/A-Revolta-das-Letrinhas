@@ -56,6 +56,8 @@ public class AreaDoProfessor : MonoBehaviour
     // Componentes do Dashboard
     private TMP_InputField inputPesquisaAlunos;
     private Transform containerListaAlunos;
+    private TextMeshProUGUI textoHeaderDashboard;
+    private TextMeshProUGUI textoSessaoProfessor;
     private TextMeshProUGUI textoHeaderAluno;
     private TextMeshProUGUI textoProgressoGeral;
     private Image imgBarraProgressoFill;
@@ -312,11 +314,11 @@ public class AreaDoProfessor : MonoBehaviour
         rtH.anchoredPosition = new Vector2(50f, -24f);
         rtH.sizeDelta = new Vector2(900f, 75f);
 
-        TextMeshProUGUI tmpH = goHeader.GetComponent<TextMeshProUGUI>();
-        tmpH.font = fontProf ?? fontJogo;
-        tmpH.text = "<size=30><b>PAINEL PEDAGÓGICO DO PROFESSOR</b></size>\n<size=17><color=#5D4037>Acompanhamento de Alunos | Diagnóstico de Aprendizagem | Modo Educador</color></size>";
-        tmpH.alignment = TextAlignmentOptions.TopLeft;
-        tmpH.color = new Color(0.2f, 0.12f, 0.05f, 1f);
+        textoHeaderDashboard = goHeader.GetComponent<TextMeshProUGUI>();
+        textoHeaderDashboard.font = fontProf ?? fontJogo;
+        textoHeaderDashboard.text = "<size=30><b>PAINEL PEDAGÓGICO DO PROFESSOR</b></size>\n<size=17><color=#5D4037>Acompanhamento de Alunos | Diagnóstico de Aprendizagem | Modo Educador</color></size>";
+        textoHeaderDashboard.alignment = TextAlignmentOptions.TopLeft;
+        textoHeaderDashboard.color = new Color(0.2f, 0.12f, 0.05f, 1f);
 
         // Barra de Status do Professor (Sessão Ativa + Botão Sair)
         CriarBarraStatusProfessor(janela.transform);
@@ -354,11 +356,11 @@ public class AreaDoProfessor : MonoBehaviour
         rtT.pivot = new Vector2(0f, 0.5f);
         rtT.anchoredPosition = new Vector2(0f, 0f);
         rtT.sizeDelta = new Vector2(200f, 40f);
-        TextMeshProUGUI tmpS = goTxt.GetComponent<TextMeshProUGUI>();
-        tmpS.font = fontProf ?? fontJogo;
-        tmpS.text = "<b><color=#1B5E20>[Sessão: Professor]</color></b>";
-        tmpS.fontSize = 16;
-        tmpS.alignment = TextAlignmentOptions.MidlineLeft;
+        textoSessaoProfessor = goTxt.GetComponent<TextMeshProUGUI>();
+        textoSessaoProfessor.font = fontProf ?? fontJogo;
+        textoSessaoProfessor.text = "<b><color=#1B5E20>[Sessão: Professor]</color></b>";
+        textoSessaoProfessor.fontSize = 16;
+        textoSessaoProfessor.alignment = TextAlignmentOptions.MidlineLeft;
 
         // Botão Encerrar Sessão perfeitamente posicionado e sem cortes
         CriarBotaoAcao(barra.transform, "BtnSairSessao", new Vector2(0f, 0f), new Vector2(130f, 42f), "ENCERRAR", spriteBtnVermelho, new Color(0.75f, 0.2f, 0.2f, 1f), EncerrarSessaoProfessor, new Vector2(1f, 0.5f));
@@ -1082,6 +1084,18 @@ public class AreaDoProfessor : MonoBehaviour
 
         if (modalDashboard != null) modalDashboard.SetActive(true);
 
+        if (textoHeaderDashboard != null)
+        {
+            string sub = !string.IsNullOrEmpty(TurmaRestritaNome) && TurmaRestritaNome != "Todas as Salas"
+                ? $"Turma: <b>{TurmaRestritaNome}</b> | Educador(a): <b>{NomeProfessorLogado}</b>"
+                : "Acompanhamento de Alunos | Diagnóstico de Aprendizagem | Modo Educador";
+            textoHeaderDashboard.text = $"<size=30><b>PAINEL PEDAGÓGICO DO PROFESSOR</b></size>\n<size=17><color=#5D4037>{sub}</color></size>";
+        }
+        if (textoSessaoProfessor != null)
+        {
+            textoSessaoProfessor.text = $"<b><color=#1B5E20>[Sessão: {NomeProfessorLogado}]</color></b>";
+        }
+
         CarregarListaAlunos("");
     }
 
@@ -1115,77 +1129,59 @@ public class AreaDoProfessor : MonoBehaviour
         string usuarioDigitado = inputLoginUser != null ? inputLoginUser.text.Trim() : "";
         string senhaDigitada = inputLoginPass != null ? inputLoginPass.text.Trim() : "";
 
-        string usuarioCorreto = PlayerPrefs.GetString(KEY_USER, DEFAULT_USER).Trim();
-        string senhaCorreta = PlayerPrefs.GetString(KEY_PASS, DEFAULT_PASS).Trim();
-
-        bool usuarioValido = string.Equals(usuarioDigitado, usuarioCorreto, StringComparison.OrdinalIgnoreCase);
-        bool senhaValida = string.Equals(senhaDigitada, senhaCorreta);
-
-        // 1. Login local padrão de administrador geral
-        if (usuarioValido && senhaValida)
+        if (string.IsNullOrEmpty(usuarioDigitado) || string.IsNullOrEmpty(senhaDigitada))
         {
-            TocarSomClique();
-            SessaoProfessorAtiva = true;
-            TurmaRestritaId = "";
-            TurmaRestritaNome = "Todas as Salas";
-            NomeProfessorLogado = "Administrador Pedagógico";
-
-            GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
-            if (gf != null) gf.ConfigurarTodosBotoes();
-            Action action = FindFirstObjectByType<Action>();
-            if (action != null) action.VerificarDesbloqueios();
-
+            TocarSomErro();
             if (textoFeedbackLogin != null)
             {
-                textoFeedbackLogin.color = new Color(0.15f, 0.55f, 0.2f, 1f);
-                textoFeedbackLogin.text = "Login efetuado com sucesso!";
-            }
-
-            if (abrirResolucaoAposLogin)
-            {
-                Invoke(nameof(AbrirResolucaoGameplay), 0.35f);
-            }
-            else
-            {
-                Invoke(nameof(AbrirDashboardProfessor), 0.35f);
+                textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+                textoFeedbackLogin.text = "Digite o usuário e a senha!";
             }
             return;
         }
 
-        // 2. Login de professor exclusivo de uma turma via ServicoNuvem
-        ServicoNuvem sn = ServicoNuvem.Instancia;
-        if (sn != null && sn.turmasDisponiveis != null)
+        string usuarioCorreto = PlayerPrefs.GetString(KEY_USER, DEFAULT_USER).Trim();
+        string senhaCorreta = PlayerPrefs.GetString(KEY_PASS, DEFAULT_PASS).Trim();
+
+        bool isMasterLocal = string.Equals(usuarioDigitado, usuarioCorreto, StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(senhaDigitada, senhaCorreta);
+
+        // 1. Login local padrão de administrador geral
+        if (isMasterLocal)
         {
-            foreach (var turma in sn.turmasDisponiveis)
+            EfetivarLoginSucesso("", "Todas as Salas", "Administrador Pedagógico");
+            return;
+        }
+
+        // 2. Autenticação remota com o Servidor Cloud
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn != null)
+        {
+            if (textoFeedbackLogin != null)
             {
-                bool loginIgual = !string.IsNullOrEmpty(turma.loginProfessor) &&
-                    string.Equals(turma.loginProfessor.Trim(), usuarioDigitado, StringComparison.OrdinalIgnoreCase);
+                textoFeedbackLogin.color = new Color(0.2f, 0.4f, 0.8f, 1f);
+                textoFeedbackLogin.text = "Verificando credenciais no servidor...";
+            }
 
-                // Permite acesso se o login corresponder à turma do professor
-                if (loginIgual)
+            sn.AutenticarProfessor(usuarioDigitado, senhaDigitada, (sucesso, resp) =>
+            {
+                if (sucesso && resp != null && resp.sucesso)
                 {
-                    TocarSomClique();
-                    SessaoProfessorAtiva = true;
-                    TurmaRestritaId = turma.turmaId;
-                    TurmaRestritaNome = turma.nome;
-                    NomeProfessorLogado = !string.IsNullOrEmpty(turma.nomeProfessor) ? turma.nomeProfessor : $"Prof. da turma {turma.nome}";
-
-                    GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
-                    if (gf != null) gf.ConfigurarTodosBotoes();
-                    Action action = FindFirstObjectByType<Action>();
-                    if (action != null) action.VerificarDesbloqueios();
-
+                    string nomeProf = !string.IsNullOrEmpty(resp.nome) ? resp.nome : "Professor";
+                    string nomeTurma = !string.IsNullOrEmpty(resp.turmaNome) ? resp.turmaNome : "Sala Vinculada";
+                    EfetivarLoginSucesso(resp.turmaId, nomeTurma, nomeProf);
+                }
+                else
+                {
+                    TocarSomErro();
                     if (textoFeedbackLogin != null)
                     {
-                        textoFeedbackLogin.color = new Color(0.15f, 0.55f, 0.2f, 1f);
-                        textoFeedbackLogin.text = $"Bem-vindo(a), {NomeProfessorLogado}!";
+                        textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+                        textoFeedbackLogin.text = "Atenção: Usuário ou senha incorretos! Tente novamente.";
                     }
-
-                    if (abrirResolucaoAposLogin) Invoke(nameof(AbrirResolucaoGameplay), 0.35f);
-                    else Invoke(nameof(AbrirDashboardProfessor), 0.35f);
-                    return;
                 }
-            }
+            });
+            return;
         }
 
         TocarSomErro();
@@ -1193,6 +1189,35 @@ public class AreaDoProfessor : MonoBehaviour
         {
             textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
             textoFeedbackLogin.text = "Atenção: Usuário ou senha incorretos! Tente novamente.";
+        }
+    }
+
+    private void EfetivarLoginSucesso(string turmaId, string turmaNome, string nomeProfessor)
+    {
+        TocarSomClique();
+        SessaoProfessorAtiva = true;
+        TurmaRestritaId = turmaId ?? "";
+        TurmaRestritaNome = turmaNome ?? "Todas as Salas";
+        NomeProfessorLogado = nomeProfessor ?? "Professor(a)";
+
+        GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
+        if (gf != null) gf.ConfigurarTodosBotoes();
+        Action action = FindFirstObjectByType<Action>();
+        if (action != null) action.VerificarDesbloqueios();
+
+        if (textoFeedbackLogin != null)
+        {
+            textoFeedbackLogin.color = new Color(0.15f, 0.55f, 0.2f, 1f);
+            textoFeedbackLogin.text = $"Bem-vindo(a), {NomeProfessorLogado}!";
+        }
+
+        if (abrirResolucaoAposLogin)
+        {
+            Invoke(nameof(AbrirResolucaoGameplay), 0.35f);
+        }
+        else
+        {
+            Invoke(nameof(AbrirDashboardProfessor), 0.35f);
         }
     }
 
@@ -1395,6 +1420,16 @@ public class AreaDoProfessor : MonoBehaviour
         {
             if (!string.IsNullOrEmpty(filtro) && !nome.ToLower().Contains(filtro.ToLower()))
                 continue;
+
+            // Se o professor logou com uma sala específica, filtra apenas os alunos dela
+            if (!string.IsNullOrEmpty(TurmaRestritaNome) && TurmaRestritaNome != "Todas as Salas")
+            {
+                string turmaAluno = ServicoNuvem.Instancia != null ? ServicoNuvem.Instancia.ObterTurmaDoAluno(nome) : "";
+                if (!string.IsNullOrEmpty(turmaAluno) && !string.Equals(turmaAluno.Trim(), TurmaRestritaNome.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+            }
 
             if (nome == alunoSelecionado) encontrouSelecionado = true;
 

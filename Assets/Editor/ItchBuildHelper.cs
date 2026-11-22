@@ -44,20 +44,6 @@ public class ItchBuildHelper
         {
             if (canvas == null || canvas.gameObject.scene != scene) continue;
 
-            // Ignorar personagens 2D (ex: Ze) para preservar escala com sprites do mundo
-            if (canvas.transform.parent != null && canvas.transform.parent.name.Contains("Ze"))
-            {
-                var localScaler = canvas.GetComponent<CanvasScaler>();
-                if (localScaler != null)
-                {
-                    Undo.RecordObject(localScaler, "Preservar ConstantPixelSize Ze");
-                    localScaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-                    localScaler.scaleFactor = 1f;
-                    EditorUtility.SetDirty(localScaler);
-                }
-                continue;
-            }
-
             // Canvases principais de tela cheia
             if (canvas.isRootCanvas)
             {

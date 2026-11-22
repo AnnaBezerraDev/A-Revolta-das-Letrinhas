@@ -186,6 +186,24 @@ public class ServicoNuvem : MonoBehaviour
         public List<DtoSalaResumo> salas;
     }
 
+    [System.Serializable]
+    public class DtoLoginProfessorEnvio
+    {
+        public string login;
+        public string senha;
+    }
+
+    [System.Serializable]
+    public class DtoLoginProfessorResposta
+    {
+        public bool sucesso;
+        public string tipo;
+        public string nome;
+        public string turmaId;
+        public string turmaNome;
+        public string erro;
+    }
+
     void Awake()
     {
         if (_instancia != null && _instancia != this)
@@ -617,6 +635,43 @@ public class ServicoNuvem : MonoBehaviour
             else
             {
                 callback?.Invoke(new List<DtoEscolaItem>());
+            }
+        }
+    }
+
+    /// <summary>
+    /// Autentica o professor de uma sala específica ou geral no servidor .NET.
+    /// </summary>
+    public void AutenticarProfessor(string login, string senha, System.Action<bool, DtoLoginProfessorResposta> callback)
+    {
+        StartCoroutine(AutenticarProfessorCoroutine(login, senha, callback));
+    }
+
+    private IEnumerator AutenticarProfessorCoroutine(string login, string senha, System.Action<bool, DtoLoginProfessorResposta> callback)
+    {
+        string url = $"{servidorUrl}/api/jogo/login-professor?token={tokenEscola}";
+        string payload = JsonUtility.ToJson(new DtoLoginProfessorEnvio { login = login, senha = senha });
+
+        using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
+        {
+            byte[] bodyRaw = Encoding.UTF8.GetBytes(payload);
+            req.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            req.SetRequestHeader("X-Escola-Token", tokenEscola);
+            req.timeout = 7;
+
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                string json = req.downloadHandler.text;
+                DtoLoginProfessorResposta res = JsonUtility.FromJson<DtoLoginProfessorResposta>(json);
+                callback?.Invoke(true, res);
+            }
+            else
+            {
+                callback?.Invoke(false, null);
             }
         }
     }

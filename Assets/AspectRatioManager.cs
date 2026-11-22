@@ -245,12 +245,6 @@ public class AspectRatioManager : MonoBehaviour
             if (canvas == null || !canvas.isRootCanvas) continue;
             if (letterboxCanvas != null && canvas == letterboxCanvas) continue;
 
-            // Personagens 2D com ConstantPixelSize não devem ser alterados
-            if (canvas.transform.parent != null && canvas.transform.parent.name.Contains("Ze"))
-            {
-                continue;
-            }
-
             var scaler = canvas.GetComponent<CanvasScaler>();
             if (scaler != null && scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize)
             {

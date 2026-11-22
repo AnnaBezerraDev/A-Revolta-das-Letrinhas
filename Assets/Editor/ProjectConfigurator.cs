@@ -228,18 +228,6 @@ public static class ProjectConfigurator
         {
             if (canvas.gameObject.scene != scene) continue;
 
-            if (canvas.transform.parent != null && canvas.transform.parent.name.Contains("Ze"))
-            {
-                var localScaler = canvas.GetComponent<CanvasScaler>();
-                if (localScaler != null)
-                {
-                    localScaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
-                    localScaler.scaleFactor = 1f;
-                    EditorUtility.SetDirty(localScaler);
-                }
-                continue;
-            }
-
             if (canvas.isRootCanvas)
             {
                 var scaler = canvas.GetComponent<CanvasScaler>();
