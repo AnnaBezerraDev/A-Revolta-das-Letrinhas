@@ -215,12 +215,12 @@ public class AreaDoProfessor : MonoBehaviour
 
         TextMeshProUGUI tmpHeader = goHeader.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpHeader.font = fontJogo;
-        tmpHeader.text = "<size=30><b>[ACESSO RESTRITO] ÁREA DO PROFESSOR</b></size>\n<size=20><color=#5D4037>Área pedagógica restrita aos educadores</color></size>";
+        tmpHeader.text = "<size=30><b>ACESSO RESTRITO - ÁREA DO PROFESSOR</b></size>\n<size=20><color=#5D4037>Área pedagógica restrita aos educadores</color></size>";
         tmpHeader.alignment = TextAlignmentOptions.Center;
         tmpHeader.color = new Color(0.2f, 0.12f, 0.05f, 1f);
 
         // Campo Usuário
-        GameObject goUser = CriarCampoInput(janela.transform, "InputUsuario", new Vector2(0f, -170f), new Vector2(460f, 56f), "Usuário: professor", false, out inputLoginUser);
+        GameObject goUser = CriarCampoInput(janela.transform, "InputUsuario", new Vector2(0f, -170f), new Vector2(460f, 56f), "Usuário (ex: prof.anna ou professor)", false, out inputLoginUser);
 
         // Campo Senha
         GameObject goPass = CriarCampoInput(janela.transform, "InputSenha", new Vector2(0f, -245f), new Vector2(460f, 56f), "Senha (ex: 1234)", true, out inputLoginPass);
@@ -345,7 +345,7 @@ public class AreaDoProfessor : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
         rt.anchoredPosition = new Vector2(-110f, -22f);
-        rt.sizeDelta = new Vector2(360f, 50f);
+        rt.sizeDelta = new Vector2(580f, 50f);
 
         // Texto Sessão Ativa
         GameObject goTxt = new GameObject("TxtSessao", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
@@ -355,14 +355,21 @@ public class AreaDoProfessor : MonoBehaviour
         rtT.anchorMax = new Vector2(0f, 0.5f);
         rtT.pivot = new Vector2(0f, 0.5f);
         rtT.anchoredPosition = new Vector2(0f, 0f);
-        rtT.sizeDelta = new Vector2(200f, 40f);
+        rtT.sizeDelta = new Vector2(210f, 40f);
         textoSessaoProfessor = goTxt.GetComponent<TextMeshProUGUI>();
         textoSessaoProfessor.font = fontProf ?? fontJogo;
         textoSessaoProfessor.text = "<b><color=#1B5E20>[Sessão: Professor]</color></b>";
         textoSessaoProfessor.fontSize = 16;
         textoSessaoProfessor.alignment = TextAlignmentOptions.MidlineLeft;
 
-        // Botão Encerrar Sessão perfeitamente posicionado e sem cortes
+        // Botão Vincular / Alterar Escola por Token
+        CriarBotaoAcao(barra.transform, "BtnTokenEscolaProf", new Vector2(-145f, 0f), new Vector2(185f, 42f), "VINCULAR ESCOLA", spriteBtnAzul, new Color(0.15f, 0.45f, 0.78f, 1f), () =>
+        {
+            GerenciadorPerfis gp = GerenciadorPerfis.Instance ?? FindFirstObjectByType<GerenciadorPerfis>();
+            if (gp != null) gp.AbrirModalTokenEscola();
+        }, new Vector2(1f, 0.5f));
+
+        // Botão Encerrar Sessão
         CriarBotaoAcao(barra.transform, "BtnSairSessao", new Vector2(0f, 0f), new Vector2(130f, 42f), "ENCERRAR", spriteBtnVermelho, new Color(0.75f, 0.2f, 0.2f, 1f), EncerrarSessaoProfessor, new Vector2(1f, 0.5f));
     }
 
@@ -1086,10 +1093,15 @@ public class AreaDoProfessor : MonoBehaviour
 
         if (textoHeaderDashboard != null)
         {
+            ServicoNuvem sn = ServicoNuvem.Instancia;
+            string escInfo = (sn != null && !string.IsNullOrEmpty(sn.nomeEscolaConectada))
+                ? $"Escola: <b>{sn.nomeEscolaConectada}</b> ({sn.municipioConectado}) | Token: <b>{sn.tokenEscola}</b>\n"
+                : "";
+
             string sub = !string.IsNullOrEmpty(TurmaRestritaNome) && TurmaRestritaNome != "Todas as Salas"
-                ? $"Turma: <b>{TurmaRestritaNome}</b> | Educador(a): <b>{NomeProfessorLogado}</b>"
-                : "Acompanhamento de Alunos | Diagnóstico de Aprendizagem | Modo Educador";
-            textoHeaderDashboard.text = $"<size=30><b>PAINEL PEDAGÓGICO DO PROFESSOR</b></size>\n<size=17><color=#5D4037>{sub}</color></size>";
+                ? $"{escInfo}Turma: <b>{TurmaRestritaNome}</b> | Educador(a): <b>{NomeProfessorLogado}</b>"
+                : $"{escInfo}Acompanhamento de Alunos | Diagnóstico de Aprendizagem | Modo Educador";
+            textoHeaderDashboard.text = $"<size=28><b>PAINEL PEDAGÓGICO DO PROFESSOR</b></size>\n<size=15><color=#5D4037>{sub}</color></size>";
         }
         if (textoSessaoProfessor != null)
         {
@@ -1181,18 +1193,23 @@ public class AreaDoProfessor : MonoBehaviour
                     {
                         foreach (var t in sn.turmasDisponiveis)
                         {
-                            if (!string.IsNullOrEmpty(t.loginProfessor))
+                            string tLogin = t.loginProfessor ?? "";
+                            string tNome = t.nomeProfessor ?? "";
+                            string tLoginClean = tLogin.Replace(".", "").Replace("_", "").Replace("-", "").Replace(" ", "").ToLower();
+                            string tNomeClean = tNome.Replace(".", "").Replace("_", "").Replace("-", "").Replace(" ", "").ToLower();
+
+                            bool matchUser = string.Equals(tLogin, usuarioDigitado, StringComparison.OrdinalIgnoreCase) ||
+                                             tLoginClean == userClean ||
+                                             string.Equals(tNome, usuarioDigitado, StringComparison.OrdinalIgnoreCase) ||
+                                             tNomeClean == userClean;
+
+                            if (matchUser && (senhaDigitada == "1234" || senhaDigitada == senhaCorreta))
                             {
-                                string tLoginClean = t.loginProfessor.Replace(".", "").Replace("_", "").Replace("-", "").Replace(" ", "").ToLower();
-                                if ((string.Equals(t.loginProfessor, usuarioDigitado, StringComparison.OrdinalIgnoreCase) || tLoginClean == userClean) &&
-                                    senhaDigitada == "1234")
-                                {
-                                    achouLocal = true;
-                                    string nomeProf = !string.IsNullOrEmpty(t.nomeProfessor) ? t.nomeProfessor : "Professor da Sala";
-                                    string nomeTurma = !string.IsNullOrEmpty(t.nome) ? t.nome : "Sala Vinculada";
-                                    EfetivarLoginSucesso(t.turmaId, nomeTurma, nomeProf);
-                                    break;
-                                }
+                                achouLocal = true;
+                                string nomeProf = !string.IsNullOrEmpty(t.nomeProfessor) ? t.nomeProfessor : "Professor da Sala";
+                                string nomeTurma = !string.IsNullOrEmpty(t.nome) ? t.nome : "Sala Vinculada";
+                                EfetivarLoginSucesso(t.turmaId, nomeTurma, nomeProf);
+                                break;
                             }
                         }
                     }

@@ -33,6 +33,14 @@ public class ServicoNuvem : MonoBehaviour
         }
     }
 
+    public class ForceAcceptCertificate : CertificateHandler
+    {
+        protected override bool ValidateCertificate(byte[] certificateData)
+        {
+            return true;
+        }
+    }
+
     [Header("Configurações do Servidor")]
     public string servidorUrl = "https://api.kairosstudios.site";
     public string tokenEscola = "ESC-CAMPINAS-01";
@@ -285,8 +293,9 @@ public class ServicoNuvem : MonoBehaviour
         string url = $"{servidorUrl}/api/jogo/conectar?token={tokenEscola}";
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             req.SetRequestHeader("X-Escola-Token", tokenEscola);
-            req.timeout = 5;
+            req.timeout = 7;
 
             yield return req.SendWebRequest();
 
@@ -430,20 +439,26 @@ public class ServicoNuvem : MonoBehaviour
             yield break;
         }
 
-        string tokenFormatado = token.Trim();
+        string tokenFormatado = token.Trim().ToUpperInvariant();
         string url = $"{servidorUrl}/api/jogo/conectar?token={tokenFormatado}";
 
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             req.SetRequestHeader("X-Escola-Token", tokenFormatado);
-            req.timeout = 6;
+            req.timeout = 8;
 
             yield return req.SendWebRequest();
 
             if (req.result == UnityWebRequest.Result.Success)
             {
                 string json = req.downloadHandler.text;
-                DtoInfoEscolaRecebida info = JsonUtility.FromJson<DtoInfoEscolaRecebida>(json);
+                DtoInfoEscolaRecebida info = null;
+                try
+                {
+                    info = JsonUtility.FromJson<DtoInfoEscolaRecebida>(json);
+                }
+                catch { }
 
                 if (info != null && !string.IsNullOrEmpty(info.nomeEscola))
                 {
@@ -491,7 +506,17 @@ public class ServicoNuvem : MonoBehaviour
                 }
             }
 
-            callback?.Invoke(false, "Token inválido ou não cadastrado no servidor.");
+            string erroMsg = "Token inválido ou não cadastrado no servidor.";
+            if (req.result == UnityWebRequest.Result.ConnectionError)
+            {
+                erroMsg = "Não foi possível conectar ao servidor. Verifique a internet.";
+            }
+            else if (req.responseCode == 404)
+            {
+                erroMsg = "Escola não encontrada para este token.";
+            }
+
+            callback?.Invoke(false, erroMsg);
         }
     }
 
@@ -650,25 +675,34 @@ public class ServicoNuvem : MonoBehaviour
 
     private IEnumerator AutenticarProfessorCoroutine(string login, string senha, System.Action<bool, DtoLoginProfessorResposta> callback)
     {
+        string loginLimpo = login != null ? login.Trim().ToLowerInvariant() : "";
+        string senhaLimpa = senha != null ? senha.Trim() : "";
         string url = $"{servidorUrl}/api/jogo/login-professor?token={tokenEscola}";
-        string payload = JsonUtility.ToJson(new DtoLoginProfessorEnvio { login = login, senha = senha });
+        string payload = JsonUtility.ToJson(new DtoLoginProfessorEnvio { login = loginLimpo, senha = senhaLimpa });
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             byte[] bodyRaw = Encoding.UTF8.GetBytes(payload);
             req.uploadHandler = new UploadHandlerRaw(bodyRaw);
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
             req.SetRequestHeader("X-Escola-Token", tokenEscola);
-            req.timeout = 7;
+            req.timeout = 8;
 
             yield return req.SendWebRequest();
 
             if (req.result == UnityWebRequest.Result.Success)
             {
-                string json = req.downloadHandler.text;
-                DtoLoginProfessorResposta res = JsonUtility.FromJson<DtoLoginProfessorResposta>(json);
-                callback?.Invoke(true, res);
+                DtoLoginProfessorResposta res = null;
+                try
+                {
+                    string json = req.downloadHandler.text;
+                    res = JsonUtility.FromJson<DtoLoginProfessorResposta>(json);
+                }
+                catch { }
+
+                callback?.Invoke(res != null && res.sucesso, res);
             }
             else
             {
@@ -715,8 +749,8 @@ public class ServicoNuvem : MonoBehaviour
         public string novidades;
     }
 
-    public int versaoLocalCodigo = 101;
-    public string versaoLocalNome = "1.0.1";
+    public int versaoLocalCodigo = 102;
+    public string versaoLocalNome = "1.0.2";
     public bool patchProntoParaAplicar { get; private set; } = false;
     public string novidadesPatch { get; private set; } = "";
 
@@ -730,7 +764,8 @@ public class ServicoNuvem : MonoBehaviour
         string url = $"{servidorUrl}/api/jogo/versao";
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
-            req.timeout = 6;
+            req.certificateHandler = new ForceAcceptCertificate();
+            req.timeout = 7;
             yield return req.SendWebRequest();
 
             if (req.result == UnityWebRequest.Result.Success)
@@ -772,7 +807,8 @@ public class ServicoNuvem : MonoBehaviour
 
         using (UnityWebRequest req = UnityWebRequest.Get(downloadUrl))
         {
-            req.timeout = 30;
+            req.certificateHandler = new ForceAcceptCertificate();
+            req.timeout = 35;
             yield return req.SendWebRequest();
 
             if (req.result == UnityWebRequest.Result.Success)

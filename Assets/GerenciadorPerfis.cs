@@ -55,6 +55,8 @@ public class GerenciadorPerfis : MonoBehaviour
     public Sprite spriteLupa;
     public TMP_FontAsset fontJogo;
 
+    public static GerenciadorPerfis Instance { get; private set; }
+
     // Componentes de UI do Lobby
     private GameObject badgeLobby;
     private TextMeshProUGUI textoBadgeAluno;
@@ -65,12 +67,25 @@ public class GerenciadorPerfis : MonoBehaviour
     private TMP_InputField inputNomeNovoAluno;
     private TextMeshProUGUI textoAvisoNovoAluno;
 
+    // Componentes de Token da Escola
+    private GameObject btnEscolaToken;
+    private TextMeshProUGUI textoBtnEscola;
+    private GameObject modalTokenEscola;
+    private TMP_InputField inputTokenEscola;
+    private TextMeshProUGUI textoFeedbackToken;
+
     private string filtroPesquisaAtual = "";
     private string alunoEmConfirmacaoExclusao = "";
     private float tempoConfirmacaoExclusao = 0f;
 
     void Awake()
     {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+        Instance = this;
         Inicializar();
     }
 
@@ -78,6 +93,12 @@ public class GerenciadorPerfis : MonoBehaviour
     {
         CarregarRecursosTema();
         CriarUILobby();
+        ServicoNuvem.OnEscolaSincronizada += AtualizarTextoBotaoEscola;
+    }
+
+    void OnDestroy()
+    {
+        ServicoNuvem.OnEscolaSincronizada -= AtualizarTextoBotaoEscola;
     }
 
     void Update()
@@ -760,6 +781,9 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpProf.alignment = TextAlignmentOptions.Center;
         tmpProf.color = Color.white;
 
+        // Botão de exibição e alteração do Token da Escola
+        CriarBotaoEscolaNaJanela(janela.transform);
+
         if (spriteXFechar == null)
         {
             GameObject goX = new GameObject("X", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
@@ -1110,6 +1134,7 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpAdd.outlineColor = new Color32(40, 20, 10, 220);
         tmpAdd.outlineWidth = 0.18f;
 
+        ConstruirModalTokenEscola(janela.transform);
         modalPerfis.SetActive(false);
     }
 
@@ -1123,6 +1148,7 @@ public class GerenciadorPerfis : MonoBehaviour
             if (textoAvisoNovoAluno != null) textoAvisoNovoAluno.text = "";
             if (inputPesquisa != null) inputPesquisa.text = "";
             if (inputNomeNovoAluno != null) inputNomeNovoAluno.text = "";
+            AtualizarTextoBotaoEscola();
             AtualizarListaCards();
         }
     }
@@ -1457,5 +1483,335 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpDel.color = Color.white;
         tmpDel.outlineColor = new Color32(40, 15, 15, 220);
         tmpDel.outlineWidth = 0.18f;
+    }
+
+    // =========================================================
+    // MODAL E BOTÃO DE VINCULAÇÃO DE ESCOLA POR TOKEN
+    // =========================================================
+    private void CriarBotaoEscolaNaJanela(Transform pai)
+    {
+        btnEscolaToken = new GameObject("BtnEscolaToken", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        btnEscolaToken.transform.SetParent(pai, false);
+        RectTransform rt = btnEscolaToken.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(1f, 1f);
+        rt.anchoredPosition = new Vector2(-125f, -48f);
+        rt.sizeDelta = new Vector2(360f, 52f);
+
+        Image img = btnEscolaToken.GetComponent<Image>();
+        img.color = new Color(0.12f, 0.45f, 0.75f, 0.95f);
+        if (spriteBtnContinuar != null)
+        {
+            img.sprite = spriteBtnContinuar;
+            img.type = Image.Type.Sliced;
+            img.color = Color.white;
+        }
+
+        Button btn = btnEscolaToken.GetComponent<Button>();
+        btn.onClick.AddListener(AbrirModalTokenEscola);
+
+        GameObject goTxt = new GameObject("TextoEscola", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxt.transform.SetParent(btnEscolaToken.transform, false);
+        RectTransform rtTxt = goTxt.GetComponent<RectTransform>();
+        rtTxt.anchorMin = Vector2.zero;
+        rtTxt.anchorMax = Vector2.one;
+        rtTxt.offsetMin = new Vector2(10f, 2f);
+        rtTxt.offsetMax = new Vector2(-10f, -2f);
+
+        textoBtnEscola = goTxt.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) textoBtnEscola.font = fontJogo;
+        textoBtnEscola.fontSize = 16f;
+        textoBtnEscola.alignment = TextAlignmentOptions.Center;
+        textoBtnEscola.color = Color.white;
+
+        AtualizarTextoBotaoEscola();
+    }
+
+    public void AtualizarTextoBotaoEscola()
+    {
+        if (textoBtnEscola == null) return;
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn != null && !string.IsNullOrEmpty(sn.nomeEscolaConectada))
+        {
+            textoBtnEscola.text = $"<b>{sn.nomeEscolaConectada}</b> <size=13>({sn.municipioConectado})</size> <color=#FFD54F>[Alterar Token]</color>";
+        }
+        else if (sn != null && !string.IsNullOrEmpty(sn.tokenEscola))
+        {
+            textoBtnEscola.text = $"<b>Escola: {sn.tokenEscola}</b> <color=#FFD54F>[Alterar Token]</color>";
+        }
+        else
+        {
+            textoBtnEscola.text = "<b>VINCULAR ESCOLA POR TOKEN</b>";
+        }
+    }
+
+    private void ConstruirModalTokenEscola(Transform pai)
+    {
+        modalTokenEscola = new GameObject("ModalTokenEscola", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        modalTokenEscola.transform.SetParent(pai, false);
+        RectTransform rtModal = modalTokenEscola.GetComponent<RectTransform>();
+        rtModal.anchorMin = Vector2.zero;
+        rtModal.anchorMax = Vector2.one;
+        rtModal.offsetMin = Vector2.zero;
+        rtModal.offsetMax = Vector2.zero;
+
+        Image imgOverlay = modalTokenEscola.GetComponent<Image>();
+        imgOverlay.color = new Color(0.06f, 0.04f, 0.03f, 0.88f);
+        imgOverlay.raycastTarget = true;
+
+        GameObject janela = new GameObject("JanelaToken", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        janela.transform.SetParent(modalTokenEscola.transform, false);
+        RectTransform rtJanela = janela.GetComponent<RectTransform>();
+        rtJanela.anchorMin = new Vector2(0.5f, 0.5f);
+        rtJanela.anchorMax = new Vector2(0.5f, 0.5f);
+        rtJanela.pivot = new Vector2(0.5f, 0.5f);
+        rtJanela.anchoredPosition = Vector2.zero;
+        rtJanela.sizeDelta = new Vector2(880f, 520f);
+
+        Image imgJanela = janela.GetComponent<Image>();
+        if (spritePainelPergaminho != null)
+        {
+            imgJanela.sprite = spritePainelPergaminho;
+            imgJanela.type = Image.Type.Sliced;
+            imgJanela.color = Color.white;
+        }
+        else
+        {
+            imgJanela.color = new Color(1f, 0.96f, 0.85f, 1f);
+        }
+
+        // Título
+        GameObject goTit = new GameObject("Titulo", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTit.transform.SetParent(janela.transform, false);
+        RectTransform rtTit = goTit.GetComponent<RectTransform>();
+        rtTit.anchorMin = new Vector2(0.5f, 1f);
+        rtTit.anchorMax = new Vector2(0.5f, 1f);
+        rtTit.pivot = new Vector2(0.5f, 1f);
+        rtTit.anchoredPosition = new Vector2(0f, -48f);
+        rtTit.sizeDelta = new Vector2(800f, 95f);
+
+        TextMeshProUGUI tmpTit = goTit.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpTit.font = fontJogo;
+        tmpTit.text = "<size=32><b>VINCULAR ESCOLA POR TOKEN</b></size>\n<size=19><color=#5D4037>Digite a chave secreta de acesso para conectar sua escola</color></size>";
+        tmpTit.alignment = TextAlignmentOptions.Center;
+        tmpTit.color = new Color(0.2f, 0.12f, 0.05f, 1f);
+
+        // Input Token
+        GameObject goInput = new GameObject("InputToken", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
+        goInput.transform.SetParent(janela.transform, false);
+        RectTransform rtInput = goInput.GetComponent<RectTransform>();
+        rtInput.anchorMin = new Vector2(0.5f, 1f);
+        rtInput.anchorMax = new Vector2(0.5f, 1f);
+        rtInput.pivot = new Vector2(0.5f, 1f);
+        rtInput.anchoredPosition = new Vector2(0f, -170f);
+        rtInput.sizeDelta = new Vector2(640f, 60f);
+
+        Image imgInput = goInput.GetComponent<Image>();
+        if (spriteBarraPesquisa != null)
+        {
+            imgInput.sprite = spriteBarraPesquisa;
+            imgInput.type = Image.Type.Sliced;
+            imgInput.color = Color.white;
+        }
+        else
+        {
+            imgInput.color = new Color(0.95f, 0.92f, 0.84f, 1f);
+        }
+
+        inputTokenEscola = goInput.GetComponent<TMP_InputField>();
+
+        GameObject textArea = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
+        textArea.transform.SetParent(goInput.transform, false);
+        RectTransform rtArea = textArea.GetComponent<RectTransform>();
+        rtArea.anchorMin = Vector2.zero;
+        rtArea.anchorMax = Vector2.one;
+        rtArea.offsetMin = new Vector2(18f, 4f);
+        rtArea.offsetMax = new Vector2(-18f, -4f);
+
+        GameObject goPh = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goPh.transform.SetParent(textArea.transform, false);
+        RectTransform rtPh = goPh.GetComponent<RectTransform>();
+        rtPh.anchorMin = Vector2.zero;
+        rtPh.anchorMax = Vector2.one;
+        rtPh.offsetMin = Vector2.zero;
+        rtPh.offsetMax = Vector2.zero;
+        TextMeshProUGUI tmpPh = goPh.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpPh.font = fontJogo;
+        tmpPh.text = "Ex: ESC-OLINTO";
+        tmpPh.fontSize = 22;
+        tmpPh.fontStyle = FontStyles.Italic;
+        tmpPh.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpPh.color = new Color(0.55f, 0.42f, 0.32f, 0.7f);
+
+        GameObject goTxt = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxt.transform.SetParent(textArea.transform, false);
+        RectTransform rtT = goTxt.GetComponent<RectTransform>();
+        rtT.anchorMin = Vector2.zero;
+        rtT.anchorMax = Vector2.one;
+        rtT.offsetMin = Vector2.zero;
+        rtT.offsetMax = Vector2.zero;
+        TextMeshProUGUI tmpT = goTxt.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpT.font = fontJogo;
+        tmpT.fontSize = 24;
+        tmpT.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpT.color = new Color(0.18f, 0.11f, 0.04f, 1f);
+
+        inputTokenEscola.textViewport = rtArea;
+        inputTokenEscola.textComponent = tmpT;
+        inputTokenEscola.placeholder = tmpPh;
+        inputTokenEscola.characterLimit = 40;
+
+        // Feedback
+        GameObject goFeed = new GameObject("FeedbackToken", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goFeed.transform.SetParent(janela.transform, false);
+        RectTransform rtFeed = goFeed.GetComponent<RectTransform>();
+        rtFeed.anchorMin = new Vector2(0.5f, 1f);
+        rtFeed.anchorMax = new Vector2(0.5f, 1f);
+        rtFeed.pivot = new Vector2(0.5f, 1f);
+        rtFeed.anchoredPosition = new Vector2(0f, -255f);
+        rtFeed.sizeDelta = new Vector2(760f, 40f);
+
+        textoFeedbackToken = goFeed.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) textoFeedbackToken.font = fontJogo;
+        textoFeedbackToken.fontSize = 18;
+        textoFeedbackToken.alignment = TextAlignmentOptions.Center;
+        textoFeedbackToken.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+        textoFeedbackToken.text = "";
+
+        // Botões Conectar e Cancelar
+        CriarBotaoModal(janela.transform, "BtnConectarToken", new Vector2(-150f, -340f), new Vector2(250f, 68f),
+            "CONECTAR", spriteBtnJogar, new Color(0.18f, 0.72f, 0.35f, 1f), OnClickSubmeterTokenEscola);
+
+        CriarBotaoModal(janela.transform, "BtnCancelarToken", new Vector2(150f, -340f), new Vector2(250f, 68f),
+            "CANCELAR", spriteBtnVermelho, new Color(0.85f, 0.25f, 0.2f, 1f), FecharModalTokenEscola);
+
+        modalTokenEscola.SetActive(false);
+    }
+
+    public void AbrirModalTokenEscola()
+    {
+        if (modalTokenEscola != null)
+        {
+            modalTokenEscola.SetActive(true);
+            modalTokenEscola.transform.SetAsLastSibling();
+            if (inputTokenEscola != null)
+            {
+                ServicoNuvem sn = ServicoNuvem.Instancia;
+                inputTokenEscola.text = sn != null ? sn.tokenEscola : "";
+                inputTokenEscola.ActivateInputField();
+            }
+            if (textoFeedbackToken != null) textoFeedbackToken.text = "";
+        }
+    }
+
+    public void FecharModalTokenEscola()
+    {
+        if (modalTokenEscola != null)
+        {
+            modalTokenEscola.SetActive(false);
+            if (textoFeedbackToken != null) textoFeedbackToken.text = "";
+        }
+    }
+
+    private void OnClickSubmeterTokenEscola()
+    {
+        if (inputTokenEscola == null) return;
+        string token = inputTokenEscola.text.Trim().ToUpperInvariant();
+
+        if (string.IsNullOrEmpty(token))
+        {
+            if (textoFeedbackToken != null)
+            {
+                textoFeedbackToken.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+                textoFeedbackToken.text = "Digite a chave da escola (ex: ESC-OLINTO)!";
+            }
+            return;
+        }
+
+        if (textoFeedbackToken != null)
+        {
+            textoFeedbackToken.color = new Color(0.12f, 0.45f, 0.85f, 1f);
+            textoFeedbackToken.text = "Conectando ao servidor da prefeitura...";
+        }
+
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn != null)
+        {
+            sn.ValidarEVincularToken(token, (sucesso, info) =>
+            {
+                if (sucesso)
+                {
+                    if (textoFeedbackToken != null)
+                    {
+                        textoFeedbackToken.color = new Color(0.15f, 0.65f, 0.2f, 1f);
+                        textoFeedbackToken.text = $"Conectado com sucesso à escola {info}!";
+                    }
+                    AtualizarTextoBotaoEscola();
+                    AtualizarListaCards();
+                    Invoke(nameof(FecharModalTokenEscola), 1.2f);
+                }
+                else
+                {
+                    if (textoFeedbackToken != null)
+                    {
+                        textoFeedbackToken.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+                        textoFeedbackToken.text = !string.IsNullOrEmpty(info) ? info : "Token não encontrado no servidor.";
+                    }
+                }
+            });
+        }
+        else
+        {
+            if (textoFeedbackToken != null)
+            {
+                textoFeedbackToken.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+                textoFeedbackToken.text = "Serviço de nuvem indisponível.";
+            }
+        }
+    }
+
+    private void CriarBotaoModal(Transform parent, string nome, Vector2 pos, Vector2 size, string texto, Sprite spr, Color corFallback, UnityEngine.Events.UnityAction acao)
+    {
+        GameObject go = new GameObject(nome, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+
+        RectTransform rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0.5f, 1f);
+        rt.anchorMax = new Vector2(0.5f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+
+        Image img = go.GetComponent<Image>();
+        if (spr != null)
+        {
+            img.sprite = spr;
+            img.type = Image.Type.Sliced;
+            img.color = Color.white;
+        }
+        else
+        {
+            img.color = corFallback;
+        }
+
+        Button btn = go.GetComponent<Button>();
+        btn.onClick.AddListener(acao);
+
+        GameObject goTxt = new GameObject("Texto", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxt.transform.SetParent(go.transform, false);
+        RectTransform rtTxt = goTxt.GetComponent<RectTransform>();
+        rtTxt.anchorMin = Vector2.zero;
+        rtTxt.anchorMax = Vector2.one;
+        rtTxt.offsetMin = new Vector2(8f, 4f);
+        rtTxt.offsetMax = new Vector2(-8f, -4f);
+
+        TextMeshProUGUI tmp = goTxt.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmp.font = fontJogo;
+        tmp.text = $"<b>{texto}</b>";
+        tmp.fontSize = 24f;
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.color = Color.white;
+        tmp.raycastTarget = false;
     }
 }

@@ -98,6 +98,21 @@ public class ControlesJanelaDesktop : MonoBehaviour
         ConstruirModalConfirmarSaida();
     }
 
+    private void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            if (modalConfirmarSaida != null && modalConfirmarSaida.activeSelf)
+            {
+                FecharConfirmacaoSaida();
+            }
+            else
+            {
+                AbrirConfirmacaoSaida();
+            }
+        }
+    }
+
     private void CriarBotaoMinimizar()
     {
         GameObject go = new GameObject("BtnMinimizarJogo", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));

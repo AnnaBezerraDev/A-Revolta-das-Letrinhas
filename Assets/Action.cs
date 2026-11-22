@@ -891,6 +891,14 @@ public class Action : MonoBehaviour
         TrocarTela(groupConfig, destino);
     }
 
+    public void SairDoJogoCompleto()
+    {
+        TocarSomClique();
+        try { PlayerPrefs.Save(); } catch {}
+        try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch {}
+        Application.Quit();
+    }
+
     public void TrocarTela(CanvasGroup sair, CanvasGroup entrar)
     {
         if (sair != null)
