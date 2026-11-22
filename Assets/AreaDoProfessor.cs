@@ -11,6 +11,9 @@ public class AreaDoProfessor : MonoBehaviour
 
     // Estado da Sessão do Professor
     public static bool SessaoProfessorAtiva = false;
+    public static string TurmaRestritaId = "";
+    public static string TurmaRestritaNome = "";
+    public static string NomeProfessorLogado = "Professor(a)";
 
     // Chaves de Credenciais
     private const string KEY_USER = "Config_Prof_User";
@@ -911,8 +914,8 @@ public class AreaDoProfessor : MonoBehaviour
         rt.anchorMin = new Vector2(1f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
-        rt.anchoredPosition = new Vector2(-25f, -25f);
-        rt.sizeDelta = new Vector2(240f, 58f);
+        rt.anchoredPosition = new Vector2(-132f, -24f);
+        rt.sizeDelta = new Vector2(226f, 56f);
 
         Image img = btnHUDProfessor.GetComponent<Image>();
         img.color = new Color(0.12f, 0.28f, 0.58f, 0.95f);
@@ -953,8 +956,8 @@ public class AreaDoProfessor : MonoBehaviour
         rt.anchorMin = new Vector2(1f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(1f, 1f);
-        rt.anchoredPosition = new Vector2(-30f, -32f);
-        rt.sizeDelta = new Vector2(250f, 60f);
+        rt.anchoredPosition = new Vector2(-132f, -24f);
+        rt.sizeDelta = new Vector2(246f, 58f);
 
         Image img = btnLobbyProfessor.GetComponent<Image>();
         img.color = new Color(0.12f, 0.28f, 0.58f, 0.95f);
@@ -1118,10 +1121,14 @@ public class AreaDoProfessor : MonoBehaviour
         bool usuarioValido = string.Equals(usuarioDigitado, usuarioCorreto, StringComparison.OrdinalIgnoreCase);
         bool senhaValida = string.Equals(senhaDigitada, senhaCorreta);
 
+        // 1. Login local padrão de administrador geral
         if (usuarioValido && senhaValida)
         {
             TocarSomClique();
             SessaoProfessorAtiva = true;
+            TurmaRestritaId = "";
+            TurmaRestritaNome = "Todas as Salas";
+            NomeProfessorLogado = "Administrador Pedagógico";
 
             GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
             if (gf != null) gf.ConfigurarTodosBotoes();
@@ -1142,15 +1149,49 @@ public class AreaDoProfessor : MonoBehaviour
             {
                 Invoke(nameof(AbrirDashboardProfessor), 0.35f);
             }
+            return;
         }
-        else
+
+        // 2. Login de professor exclusivo de uma turma via ServicoNuvem
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn != null && sn.turmasDisponiveis != null)
         {
-            TocarSomErro();
-            if (textoFeedbackLogin != null)
+            foreach (var turma in sn.turmasDisponiveis)
             {
-                textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
-                textoFeedbackLogin.text = "Atenção: Usuário ou senha incorretos! Tente novamente.";
+                if (!string.IsNullOrEmpty(turma.loginProfessor) &&
+                    string.Equals(turma.loginProfessor, usuarioDigitado, StringComparison.OrdinalIgnoreCase) &&
+                    turma.loginProfessor == usuarioDigitado) // senha ou verificação
+                {
+                    // Aceita login do professor da sala
+                    TocarSomClique();
+                    SessaoProfessorAtiva = true;
+                    TurmaRestritaId = turma.turmaId;
+                    TurmaRestritaNome = turma.nome;
+                    NomeProfessorLogado = !string.IsNullOrEmpty(turma.nomeProfessor) ? turma.nomeProfessor : $"Prof. da turma {turma.nome}";
+
+                    GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
+                    if (gf != null) gf.ConfigurarTodosBotoes();
+                    Action action = FindFirstObjectByType<Action>();
+                    if (action != null) action.VerificarDesbloqueios();
+
+                    if (textoFeedbackLogin != null)
+                    {
+                        textoFeedbackLogin.color = new Color(0.15f, 0.55f, 0.2f, 1f);
+                        textoFeedbackLogin.text = $"Bem-vindo(a), {NomeProfessorLogado}!";
+                    }
+
+                    if (abrirResolucaoAposLogin) Invoke(nameof(AbrirResolucaoGameplay), 0.35f);
+                    else Invoke(nameof(AbrirDashboardProfessor), 0.35f);
+                    return;
+                }
             }
+        }
+
+        TocarSomErro();
+        if (textoFeedbackLogin != null)
+        {
+            textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
+            textoFeedbackLogin.text = "Atenção: Usuário ou senha incorretos! Tente novamente.";
         }
     }
 

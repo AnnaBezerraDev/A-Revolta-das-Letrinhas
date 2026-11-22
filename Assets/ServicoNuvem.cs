@@ -34,11 +34,14 @@ public class ServicoNuvem : MonoBehaviour
     }
 
     [Header("Configurações do Servidor")]
-    public string servidorUrl = "http://localhost:5000";
+    public string servidorUrl = "https://api.kairosstudios.site";
     public string tokenEscola = "ESC-CAMPINAS-01";
     public bool conectadoAoServidor { get; private set; } = false;
     public string nomeEscolaConectada { get; private set; } = "";
     public string municipioConectado { get; private set; } = "";
+    public string validadeContrato { get; private set; } = "";
+    public int diasRestantesContrato { get; private set; } = 999;
+    public bool contratoValido { get; private set; } = true;
 
     // Evento disparado quando a escola ou alunos são atualizados
     public delegate void EscolaSincronizadaHandler();
@@ -106,6 +109,8 @@ public class ServicoNuvem : MonoBehaviour
     {
         public string turmaId;
         public string nome;
+        public string nomeProfessor;
+        public string loginProfessor;
         public List<DtoAlunoRecebido> alunos;
     }
 
@@ -116,6 +121,10 @@ public class ServicoNuvem : MonoBehaviour
         public string nomeEscola;
         public string municipio;
         public string uf;
+        public string dataExpiracaoContrato;
+        public string numeroConvenio;
+        public int diasRestantesContrato;
+        public bool contratoValido;
         public string tokenAcesso;
         public List<DtoTurmaRecebida> turmas;
     }
@@ -272,6 +281,9 @@ public class ServicoNuvem : MonoBehaviour
                 {
                     nomeEscolaConectada = info.nomeEscola;
                     municipioConectado = $"{info.municipio}/{info.uf}";
+                    validadeContrato = !string.IsNullOrEmpty(info.dataExpiracaoContrato) ? info.dataExpiracaoContrato : "Sem expiração";
+                    diasRestantesContrato = info.diasRestantesContrato;
+                    contratoValido = info.contratoValido;
 
                     turmasDisponiveis.Clear();
                     mapaAlunosIds.Clear();
@@ -420,6 +432,9 @@ public class ServicoNuvem : MonoBehaviour
                     conectadoAoServidor = true;
                     nomeEscolaConectada = info.nomeEscola;
                     municipioConectado = $"{info.municipio}/{info.uf}";
+                    validadeContrato = !string.IsNullOrEmpty(info.dataExpiracaoContrato) ? info.dataExpiracaoContrato : "Sem expiração";
+                    diasRestantesContrato = info.diasRestantesContrato;
+                    contratoValido = info.contratoValido;
 
                     SalvarConfiguracaoLocal();
 

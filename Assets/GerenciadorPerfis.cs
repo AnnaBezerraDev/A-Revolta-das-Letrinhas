@@ -243,6 +243,42 @@ public class GerenciadorPerfis : MonoBehaviour
         return ResultadoCriacaoPerfil.Sucesso;
     }
 
+    /// <summary>
+    /// Define no jogo ESTRITAMENTE a lista de alunos da escola conectada no servidor.
+    /// </summary>
+    public static void DefinirAlunosDaEscola(List<string> alunosServidor)
+    {
+        if (alunosServidor == null) return;
+        List<string> listaFinal = new List<string>();
+        foreach (var a in alunosServidor)
+        {
+            string trimmed = a.Trim();
+            if (!string.IsNullOrEmpty(trimmed) && !listaFinal.Contains(trimmed))
+                listaFinal.Add(trimmed);
+        }
+
+        if (listaFinal.Count == 0)
+        {
+            listaFinal.Add("Aluno 1");
+        }
+
+        SalvarListaPerfis(listaFinal);
+
+        string salvo = PlayerPrefs.GetString(KEY_PERFIL_ATIVO, "");
+        if (string.IsNullOrEmpty(salvo) || !listaFinal.Contains(salvo))
+        {
+            _perfilAtivo = listaFinal[0];
+            PlayerPrefs.SetString(KEY_PERFIL_ATIVO, _perfilAtivo);
+            PlayerPrefs.Save();
+        }
+        else
+        {
+            _perfilAtivo = salvo;
+        }
+
+        OnPerfilAlterado?.Invoke();
+    }
+
     public static bool CriarPerfil(string nome)
     {
         return TentarCriarPerfil(nome, out _) == ResultadoCriacaoPerfil.Sucesso;
