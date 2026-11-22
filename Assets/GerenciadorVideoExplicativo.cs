@@ -27,7 +27,7 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
     [Tooltip("Vídeo direto do YouTube para Matemática Médio (Divisão e Expressões com Parênteses)")]
     public string urlYoutubeMathMedio = "https://www.youtube.com/watch?v=T7Co1o7fh6k";
 
-    [Tooltip("Vídeo direto do YouTube para Matemática Difícil (Expressões Numéricas e Potenciação)")]
+    [Tooltip("Vídeo direto do YouTube para Matemática Difícil (Expressões Numéricas e Ordem das Operações)")]
     public string urlYoutubeMathDificil = "https://www.youtube.com/watch?v=Xx8e6QGf7IQ";
 
     [Header("Sprites de UI (Carregados automaticamente se nulos)")]
@@ -730,16 +730,15 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
             case 2: // Matemática Difícil
             default:
                 urlAtual = !string.IsNullOrEmpty(urlYoutubeMathDificil) ? urlYoutubeMathDificil : urlYoutubeGeral;
-                if (textoTituloNivel != null) textoTituloNivel.text = "Matemática Difícil: Expressões e Potenciação";
+                if (textoTituloNivel != null) textoTituloNivel.text = "Matemática Difícil: Expressões Numéricas";
                 if (textoCorpoExplicacao != null)
                 {
                     textoCorpoExplicacao.text =
                         resolucaoQuestao +
                         "<b>ORDEM DAS OPERAÇÕES (PASSO A PASSO):</b>\n" +
-                        "1. <b>Parênteses:</b> Resolva tudo o que estiver dentro de ( ) primeiro.\n" +
-                        "2. <b>Potências:</b> 5² significa 5 multiplicado por ele mesmo (5 x 5 = 25)!\n" +
-                        "3. <b>Multiplicação e Divisão</b>\n" +
-                        "4. <b>Adição e Subtração</b>\n\n" +
+                        "1. <b>Parênteses:</b> Resolva sempre o que estiver dentro de ( ) primeiro.\n" +
+                        "2. <b>Multiplicação e Divisão:</b> Resolva na ordem em que aparecem (da esquerda para a direita).\n" +
+                        "3. <b>Adição e Subtração:</b> São as últimas a serem resolvidas.\n\n" +
                         "<b>Clique no vídeo no YouTube ao lado</b> para aprender a resolver qualquer expressão!";
                 }
                 if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo: Operações Combinadas e Parênteses (Smile and Learn)";

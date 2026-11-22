@@ -478,23 +478,74 @@ public class GameManager : MonoBehaviour
         }
         else
         {
+            // Nível Difícil: Alinhado à BNCC do Ensino Fundamental 1 (4º e 5º Anos - EF04MA03, EF04MA04, EF04MA05, EF05MA07, EF05MA08)
+            // Expressões numéricas com parênteses e ordem de precedência das quatro operações fundamentais com números naturais, sem potenciação.
             if (numeroFase < 10)
             {
-                int a = Random.Range(2, 9);
-                pergunta = $"{a}² = ?"; correta = a * a;
-                passoAPasso = $"• <b>Potência ao Quadrado:</b> Multiplique a base por ela mesma\n• {a} x {a} = <color=#00E676>{correta}</color>";
+                // Fases 1 a 10: Expressões com multiplicação e adição/subtração combinadas: (A x B) - C ou (A x B) + C
+                int a = Random.Range(3, 11);
+                int b = Random.Range(3, 10);
+                int c = Random.Range(2, 20);
+                bool somar = Random.value > 0.5f;
+
+                if (somar)
+                {
+                    pergunta = $"({a} x {b}) + {c} = ?";
+                    correta = (a * b) + c;
+                    passoAPasso = $"• <b>1º Resolva os Parênteses:</b> {a} x {b} = {a * b}\n• <b>2º Some {c}:</b> {a * b} + {c} = <color=#00E676>{correta}</color>";
+                }
+                else
+                {
+                    if (c >= (a * b)) c = (a * b) - 5;
+                    if (c < 1) c = 1;
+                    pergunta = $"({a} x {b}) - {c} = ?";
+                    correta = (a * b) - c;
+                    passoAPasso = $"• <b>1º Resolva os Parênteses:</b> {a} x {b} = {a * b}\n• <b>2º Subtraia {c}:</b> {a * b} - {c} = <color=#00E676>{correta}</color>";
+                }
             }
             else if (numeroFase < 20)
             {
-                int a = Random.Range(3, 10); int b = Random.Range(2, 6); int c = Random.Range(2, 8);
-                pergunta = $"({a} x {b}) + {c}² = ?"; correta = (a * b) + (c * c);
-                passoAPasso = $"• <b>1º Multiplicação:</b> {a} x {b} = {a * b}\n• <b>2º Potência:</b> {c}² = {c * c}\n• <b>3º Some os dois:</b> {a * b} + {c * c} = <color=#00E676>{correta}</color>";
+                // Fases 11 a 20: Precedência das 4 operações com divisão e multiplicação exatas: A + (B ÷ C) ou (A x B) ÷ C
+                int c = Random.Range(2, 6);
+                int quociente = Random.Range(3, 10);
+                int b = c * quociente; // Garante divisão exata
+                int a = Random.Range(10, 40);
+
+                if (numeroFase % 2 == 0)
+                {
+                    pergunta = $"{a} + ({b} ÷ {c}) = ?";
+                    correta = a + quociente;
+                    passoAPasso = $"• <b>1º Resolva a Divisão:</b> {b} ÷ {c} = {quociente}\n• <b>2º Some {a}:</b> {a} + {quociente} = <color=#00E676>{correta}</color>";
+                }
+                else
+                {
+                    int fatorMult = Random.Range(2, 6);
+                    pergunta = $"({b} ÷ {c}) x {fatorMult} = ?";
+                    correta = quociente * fatorMult;
+                    passoAPasso = $"• <b>1º Resolva a Divisão:</b> {b} ÷ {c} = {quociente}\n• <b>2º Multiplique por {fatorMult}:</b> {quociente} x {fatorMult} = <color=#00E676>{correta}</color>";
+                }
             }
             else
             {
-                int a = Random.Range(20, 50); int b = Random.Range(2, 10); int c = Random.Range(2, 5);
-                pergunta = $"({a} + {b}) x {c} = ?"; correta = (a + b) * c;
-                passoAPasso = $"• <b>1º Resolva os Parênteses primeiro:</b> {a} + {b} = {a + b}\n• <b>2º Multiplique por {c}:</b> {a + b} x {c} = <color=#00E676>{correta}</color>";
+                // Fases 21 a 30: Expressões compostas com parênteses: (A + B) x C ou (A - B) x C
+                int c = Random.Range(2, 6);
+                int a = Random.Range(10, 35);
+                int b = Random.Range(2, 15);
+                bool somar = (numeroFase % 2 == 0);
+
+                if (somar)
+                {
+                    pergunta = $"({a} + {b}) x {c} = ?";
+                    correta = (a + b) * c;
+                    passoAPasso = $"• <b>1º Resolva os Parênteses:</b> {a} + {b} = {a + b}\n• <b>2º Multiplique por {c}:</b> {a + b} x {c} = <color=#00E676>{correta}</color>";
+                }
+                else
+                {
+                    if (b >= a) b = a - 3;
+                    pergunta = $"({a} - {b}) x {c} = ?";
+                    correta = (a - b) * c;
+                    passoAPasso = $"• <b>1º Resolva os Parênteses:</b> {a} - {b} = {a - b}\n• <b>2º Multiplique por {c}:</b> {a - b} x {c} = <color=#00E676>{correta}</color>";
+                }
             }
         }
 
