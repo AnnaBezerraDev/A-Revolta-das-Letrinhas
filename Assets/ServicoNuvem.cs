@@ -222,6 +222,7 @@ public class ServicoNuvem : MonoBehaviour
     {
         StartCoroutine(ConectarESincronizarCoroutine());
         StartCoroutine(RotinaFilaOfflineCoroutine());
+        StartCoroutine(VerificarAtualizacaoCoroutine());
     }
 
     public void CarregarConfiguracaoLocal()
@@ -695,5 +696,168 @@ public class ServicoNuvem : MonoBehaviour
                 enviandoFila = false;
             }
         }
+    }
+
+    // =========================================================
+    // SISTEMA DE AUTO-ATUALIZAÇÃO REMOTA (PATCH DE ESCOLAS)
+    // Permite que qualquer escola receba melhorias e correções
+    // sem precisar baixar o jogo inteiro de 200MB novamente.
+    // =========================================================
+
+    [System.Serializable]
+    public class DtoVersaoResposta
+    {
+        public string versao;
+        public int versaoCodigo;
+        public bool temPatch;
+        public long tamanhoBytes;
+        public string urlDownloadPatch;
+        public string novidades;
+    }
+
+    public int versaoLocalCodigo = 101;
+    public string versaoLocalNome = "1.0.1";
+    public bool patchProntoParaAplicar { get; private set; } = false;
+    public string novidadesPatch { get; private set; } = "";
+
+    public void VerificarAtualizacaoManual(System.Action<bool, string> onConcluido = null)
+    {
+        StartCoroutine(VerificarAtualizacaoCoroutine(onConcluido));
+    }
+
+    public IEnumerator VerificarAtualizacaoCoroutine(System.Action<bool, string> onConcluido = null)
+    {
+        string url = $"{servidorUrl}/api/jogo/versao";
+        using (UnityWebRequest req = UnityWebRequest.Get(url))
+        {
+            req.timeout = 6;
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                DtoVersaoResposta info = null;
+                try
+                {
+                    string json = req.downloadHandler.text;
+                    info = JsonUtility.FromJson<DtoVersaoResposta>(json);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[AutoUpdater] Erro ao processar versão: {ex.Message}");
+                }
+
+                int versaoAtual = PlayerPrefs.GetInt("VersaoPatchCodigo", 100);
+
+                if (info != null && info.temPatch && info.versaoCodigo > versaoAtual)
+                {
+                    Debug.Log($"[AutoUpdater] Nova versão encontrada: v{info.versao} (código {info.versaoCodigo}). Baixando patch...");
+                    yield return StartCoroutine(BaixarEAplicarPatchCoroutine(info, onConcluido));
+                    yield break;
+                }
+                else
+                {
+                    onConcluido?.Invoke(false, "O jogo já está com a versão mais recente da prefeitura!");
+                }
+            }
+            else
+            {
+                onConcluido?.Invoke(false, "Servidor de atualizações offline ou inacessível no momento.");
+            }
+        }
+    }
+
+    private IEnumerator BaixarEAplicarPatchCoroutine(DtoVersaoResposta info, System.Action<bool, string> onConcluido = null)
+    {
+        string downloadUrl = info.urlDownloadPatch.StartsWith("http") ? info.urlDownloadPatch : $"{servidorUrl}{info.urlDownloadPatch}";
+
+        using (UnityWebRequest req = UnityWebRequest.Get(downloadUrl))
+        {
+            req.timeout = 30;
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                byte[] bytes = req.downloadHandler.data;
+                if (bytes != null && bytes.Length > 20000)
+                {
+                    try
+                    {
+                        string managedDir = Path.Combine(Application.dataPath, "Managed");
+                        if (!Directory.Exists(managedDir)) Directory.CreateDirectory(managedDir);
+
+                        string patchNovo = Path.Combine(managedDir, "Assembly-CSharp.dll.novo");
+                        File.WriteAllBytes(patchNovo, bytes);
+
+                        string batPath = Path.Combine(Application.dataPath, "..", "atualizar_jogo.bat");
+                        string batConteudo = "@echo off\r\n" +
+                            "timeout /t 1 /nobreak >nul\r\n" +
+                            "set \"BASE_DIR=%~dp0\"\r\n" +
+                            "if exist \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" (\r\n" +
+                            "    copy /y \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll\" >nul\r\n" +
+                            "    del \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" >nul\r\n" +
+                            ")\r\n" +
+                            "if \"%1\"==\"reiniciar\" (\r\n" +
+                            "    start \"\" \"%BASE_DIR%RevoltaDasLetrinhas.exe\"\r\n" +
+                            ")\r\n" +
+                            "exit\r\n";
+
+                        File.WriteAllText(batPath, batConteudo, Encoding.UTF8);
+
+                        PlayerPrefs.SetInt("VersaoPatchCodigo", info.versaoCodigo);
+                        PlayerPrefs.SetString("VersaoPatchNome", info.versao);
+                        PlayerPrefs.Save();
+
+                        patchProntoParaAplicar = true;
+                        novidadesPatch = info.novidades;
+                        Debug.Log($"[AutoUpdater] Patch v{info.versao} pronto para ser aplicado na saída ou reinício do jogo!");
+                        onConcluido?.Invoke(true, $"Atualização v{info.versao} baixada com sucesso! Será aplicada ao fechar o jogo.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[AutoUpdater] Falha ao salvar patch local: {ex.Message}");
+                        onConcluido?.Invoke(false, "Erro ao gravar arquivo de atualização.");
+                    }
+                }
+                else
+                {
+                    onConcluido?.Invoke(false, "Arquivo de atualização corrompido ou incompleto.");
+                }
+            }
+            else
+            {
+                onConcluido?.Invoke(false, "Falha no download da atualização.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reinicia o jogo imediatamente aplicando a atualização baixada
+    /// </summary>
+    public void ReiniciarComAtualizacao()
+    {
+        try
+        {
+            PlayerPrefs.Save();
+            string batPath = Path.Combine(Application.dataPath, "..", "atualizar_jogo.bat");
+            if (File.Exists(batPath))
+            {
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = batPath,
+                    Arguments = "reiniciar",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+        }
+        catch { }
+
+        Application.Quit();
+        try
+        {
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        }
+        catch { }
     }
 }

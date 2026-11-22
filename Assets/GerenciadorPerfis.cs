@@ -1309,28 +1309,52 @@ public class GerenciadorPerfis : MonoBehaviour
         if (spriteAvatarKid != null) imgIcon.sprite = spriteAvatarKid;
         imgIcon.color = (spriteAvatarKid != null) ? Color.white : new Color(0.95f, 0.75f, 0.35f, 1f);
 
-        // Textos Nome e Progresso
-        GameObject goInfo = new GameObject("Info", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        // Container de Textos do Aluno (Nome e Progresso separados para evitar qualquer sobreposicao)
+        GameObject goInfo = new GameObject("Info", typeof(RectTransform));
         goInfo.transform.SetParent(card.transform, false);
         RectTransform rtInfo = goInfo.GetComponent<RectTransform>();
         rtInfo.anchorMin = new Vector2(0f, 0f);
         rtInfo.anchorMax = new Vector2(1f, 1f);
-        rtInfo.offsetMin = new Vector2(90f, 0f);
-        rtInfo.offsetMax = new Vector2(-360f, 0f);
+        rtInfo.offsetMin = new Vector2(90f, 6f);
+        rtInfo.offsetMax = new Vector2(-350f, -6f);
 
         int concluidas = ObterTotalFasesConcluidas(nome);
-        string statusTag = isAtivo ? "  <color=#E65100><b>[JOGANDO AGORA]</b></color>" : "";
+        string statusTag = isAtivo ? "   <color=#E65100><b>[JOGANDO AGORA]</b></color>" : "";
         string textoProgresso = concluidas == 0 ? "<color=#8D6E63>Novo aluno - Nenhuma fase jogada ainda</color>" : $"<color=#2E7D32><b>Fases concluídas: {concluidas}/60</b></color>";
 
-        TextMeshProUGUI tmpInfo = goInfo.GetComponent<TextMeshProUGUI>();
-        if (fontJogo != null) tmpInfo.font = fontJogo;
-        tmpInfo.enableAutoSizing = true;
-        tmpInfo.fontSizeMin = 13f;
-        tmpInfo.fontSizeMax = 20f;
-        tmpInfo.lineSpacing = -8f;
-        tmpInfo.text = $"<b>{nome}</b>{statusTag}\n<size=15>{textoProgresso}</size>";
-        tmpInfo.alignment = TextAlignmentOptions.MidlineLeft;
-        tmpInfo.color = new Color(0.18f, 0.11f, 0.05f, 1f);
+        // Linha 1: Nome do Aluno (com auto-sizing para nomes longos sem quebra ou colisao)
+        GameObject goNome = new GameObject("TxtNome", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goNome.transform.SetParent(goInfo.transform, false);
+        RectTransform rtNome = goNome.GetComponent<RectTransform>();
+        rtNome.anchorMin = new Vector2(0f, 0.44f);
+        rtNome.anchorMax = new Vector2(1f, 1f);
+        rtNome.offsetMin = Vector2.zero;
+        rtNome.offsetMax = Vector2.zero;
+
+        TextMeshProUGUI tmpNome = goNome.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpNome.font = fontJogo;
+        tmpNome.enableAutoSizing = true;
+        tmpNome.fontSizeMin = 13f;
+        tmpNome.fontSizeMax = 22f;
+        tmpNome.text = $"<b>{nome}</b>";
+        tmpNome.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpNome.color = new Color(0.18f, 0.11f, 0.05f, 1f);
+
+        // Linha 2: Progresso Pedagógico e Tag de Ativo
+        GameObject goSub = new GameObject("TxtProgresso", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goSub.transform.SetParent(goInfo.transform, false);
+        RectTransform rtSub = goSub.GetComponent<RectTransform>();
+        rtSub.anchorMin = new Vector2(0f, 0f);
+        rtSub.anchorMax = new Vector2(1f, 0.44f);
+        rtSub.offsetMin = Vector2.zero;
+        rtSub.offsetMax = Vector2.zero;
+
+        TextMeshProUGUI tmpSub = goSub.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpSub.font = fontJogo;
+        tmpSub.fontSize = 15f;
+        tmpSub.text = $"{textoProgresso}{statusTag}";
+        tmpSub.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpSub.color = new Color(0.25f, 0.18f, 0.12f, 1f);
 
         // Botao Selecionar / Jogar (Com borda slim e texto nitido)
         GameObject btnJogar = new GameObject("BtnJogar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));

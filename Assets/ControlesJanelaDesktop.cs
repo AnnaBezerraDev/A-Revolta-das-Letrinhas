@@ -348,11 +348,40 @@ public class ControlesJanelaDesktop : MonoBehaviour
     public void ConfirmarSaidaJogo()
     {
         TocarSomClique();
-        PlayerPrefs.Save();
-#if UNITY_EDITOR
-        UnityEditor.EditorApplication.isPlaying = false;
-#else
+        try
+        {
+            PlayerPrefs.Save();
+        }
+        catch { }
+
+        // Se houver uma atualização baixada em segundo plano, executa o script de troca na saída
+        try
+        {
+            string managedDir = System.IO.Path.Combine(Application.dataPath, "Managed");
+            string patchNovo = System.IO.Path.Combine(managedDir, "Assembly-CSharp.dll.novo");
+            string batPath = System.IO.Path.Combine(Application.dataPath, "..", "atualizar_jogo.bat");
+
+            if (System.IO.File.Exists(patchNovo) && System.IO.File.Exists(batPath))
+            {
+                System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = batPath,
+                    Arguments = "",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+        }
+        catch { }
+
         Application.Quit();
-#endif
+
+        // Garante fechamento imediato do executavel no Windows
+        try
+        {
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        }
+        catch { }
     }
 }
