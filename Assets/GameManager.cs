@@ -554,7 +554,13 @@ public class GameManager : MonoBehaviour
         UltimaRespostaMatematica = correta;
 
         respostaCorreta = correta.ToString();
-        if (uiAtual.balaoTexto != null) uiAtual.balaoTexto.text = pergunta;
+        if (uiAtual.balaoTexto != null)
+        {
+            uiAtual.balaoTexto.enableAutoSizing = true;
+            uiAtual.balaoTexto.fontSizeMin = 28f;
+            uiAtual.balaoTexto.fontSizeMax = 56f;
+            uiAtual.balaoTexto.text = pergunta;
+        }
 
         List<string> opcoes = new List<string> { respostaCorreta };
         int errada1 = correta + Random.Range(1, 10);

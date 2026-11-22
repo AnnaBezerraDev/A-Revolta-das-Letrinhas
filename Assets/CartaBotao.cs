@@ -32,16 +32,20 @@ public class CartaBotao : MonoBehaviour
         if (textoDaCarta != null)
         {
             textoDaCarta.text = letra;
-            if (letra != null && letra.Length > 5)
+            textoDaCarta.enableAutoSizing = true;
+            textoDaCarta.fontSizeMin = 14f;
+
+            if (letra != null && letra.Length > 6)
             {
-                textoDaCarta.enableAutoSizing = true;
-                textoDaCarta.fontSizeMin = 14f;
+                textoDaCarta.fontSizeMax = 28f;
+            }
+            else if (letra != null && letra.Length > 3)
+            {
                 textoDaCarta.fontSizeMax = 34f;
             }
-            else if (textoDaCarta.enableAutoSizing && letra != null && letra.Length <= 5)
+            else
             {
-                textoDaCarta.enableAutoSizing = false;
-                textoDaCarta.fontSize = 42f;
+                textoDaCarta.fontSizeMax = 42f;
             }
         }
     }

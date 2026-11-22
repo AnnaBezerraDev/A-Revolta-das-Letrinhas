@@ -1158,11 +1158,12 @@ public class AreaDoProfessor : MonoBehaviour
         {
             foreach (var turma in sn.turmasDisponiveis)
             {
-                if (!string.IsNullOrEmpty(turma.loginProfessor) &&
-                    string.Equals(turma.loginProfessor, usuarioDigitado, StringComparison.OrdinalIgnoreCase) &&
-                    turma.loginProfessor == usuarioDigitado) // senha ou verificação
+                bool loginIgual = !string.IsNullOrEmpty(turma.loginProfessor) &&
+                    string.Equals(turma.loginProfessor.Trim(), usuarioDigitado, StringComparison.OrdinalIgnoreCase);
+
+                // Permite acesso se o login corresponder à turma do professor
+                if (loginIgual)
                 {
-                    // Aceita login do professor da sala
                     TocarSomClique();
                     SessaoProfessorAtiva = true;
                     TurmaRestritaId = turma.turmaId;
