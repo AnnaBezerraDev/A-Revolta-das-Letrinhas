@@ -1359,6 +1359,7 @@ public class GerenciadorPerfis : MonoBehaviour
 
         TextMeshProUGUI tmpNome = goNome.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpNome.font = fontJogo;
+        tmpNome.textWrappingMode = TextWrappingModes.NoWrap;
         tmpNome.enableAutoSizing = true;
         tmpNome.fontSizeMin = 13f;
         tmpNome.fontSizeMax = 22f;
@@ -1377,7 +1378,10 @@ public class GerenciadorPerfis : MonoBehaviour
 
         TextMeshProUGUI tmpSub = goSub.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpSub.font = fontJogo;
-        tmpSub.fontSize = 15f;
+        tmpSub.textWrappingMode = TextWrappingModes.NoWrap;
+        tmpSub.enableAutoSizing = true;
+        tmpSub.fontSizeMin = 11f;
+        tmpSub.fontSizeMax = 15f;
         tmpSub.text = $"{textoProgresso}{statusTag}";
         tmpSub.alignment = TextAlignmentOptions.MidlineLeft;
         tmpSub.color = new Color(0.25f, 0.18f, 0.12f, 1f);

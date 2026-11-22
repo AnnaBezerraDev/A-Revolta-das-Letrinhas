@@ -399,6 +399,7 @@ public class ServicoNuvem : MonoBehaviour
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
             req.uploadHandler = new UploadHandlerRaw(bodyRaw);
             req.downloadHandler = new DownloadHandlerBuffer();
@@ -539,6 +540,7 @@ public class ServicoNuvem : MonoBehaviour
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
             req.uploadHandler = new UploadHandlerRaw(bodyRaw);
             req.downloadHandler = new DownloadHandlerBuffer();
@@ -581,6 +583,7 @@ public class ServicoNuvem : MonoBehaviour
         string url = $"{servidorUrl}/api/jogo/salas-resumo?token={tokenEscola}";
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             req.SetRequestHeader("X-Escola-Token", tokenEscola);
             req.timeout = 6;
             yield return req.SendWebRequest();
@@ -615,6 +618,7 @@ public class ServicoNuvem : MonoBehaviour
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
             req.uploadHandler = new UploadHandlerRaw(bodyRaw);
             req.downloadHandler = new DownloadHandlerBuffer();
@@ -649,6 +653,7 @@ public class ServicoNuvem : MonoBehaviour
         string url = $"{servidorUrl}/api/jogo/escolas-disponiveis";
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
+            req.certificateHandler = new ForceAcceptCertificate();
             req.timeout = 5;
             yield return req.SendWebRequest();
 
