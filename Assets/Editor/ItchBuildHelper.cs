@@ -134,6 +134,17 @@ public class ItchBuildHelper
                 string burstFolder = Path.Combine(WIN_BUILD_FOLDER, "My project_BurstDebugInformation_DoNotShip");
                 if (Directory.Exists(burstFolder)) Directory.Delete(burstFolder, true);
 
+                // Garante que o config_escola.json seja incluido junto com o executavel
+                try
+                {
+                    string srcConfig = Path.Combine(Application.dataPath, "StreamingAssets", "config_escola.json");
+                    if (File.Exists(srcConfig))
+                    {
+                        File.Copy(srcConfig, Path.Combine(WIN_BUILD_FOLDER, "config_escola.json"), true);
+                    }
+                }
+                catch { }
+
                 if (File.Exists(WIN_ZIP_PATH)) File.Delete(WIN_ZIP_PATH);
 
                 Debug.Log("Compactando pasta para arquivo ZIP...");

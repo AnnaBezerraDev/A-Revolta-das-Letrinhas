@@ -211,6 +211,12 @@ public class GerenciadorFases : MonoBehaviour
         SpriteRenderer sr = botao.GetComponent<SpriteRenderer>();
         if (sr != null)
         {
+            if (nivelAtual >= 1)
+            {
+                sr.sortingLayerID = 174448913; // Camada 7 ("2") para ficar sempre visível à frente do fundo FaseDificil
+                sr.sortingOrder = 0;
+            }
+
             if (faseCompleta)
             {
                 sr.color = Color.white;
@@ -226,11 +232,24 @@ public class GerenciadorFases : MonoBehaviour
         }
 
         Image imagem = botao.GetComponent<Image>();
-        if (imagem != null && imagem.sprite != null)
+        if (imagem != null)
         {
-            if (faseCompleta) imagem.color = Color.white;
-            else if (!faseDisponivel) imagem.color = corFaseBloqueada;
-            else imagem.color = Color.white;
+            imagem.enabled = true;
+            imagem.raycastTarget = true;
+
+            if (imagem.sprite == null && botao.GetComponent<SpriteRenderer>() != null)
+            {
+                // O botão usa SpriteRenderer para desenhar o número.
+                // Mantemos a Image ativa com cor transparente para capturar os cliques do mouse/toque sem desenhar fundo branco
+                imagem.color = Color.clear;
+                botao.transition = Selectable.Transition.None;
+            }
+            else if (imagem.sprite != null)
+            {
+                if (faseCompleta) imagem.color = Color.white;
+                else if (!faseDisponivel) imagem.color = corFaseBloqueada;
+                else imagem.color = Color.white;
+            }
         }
 
         AtualizarBadgesVisuaisFase(botao, faseCompleta, faseDisponivel, isFaseAtual);
@@ -312,31 +331,9 @@ public class GerenciadorFases : MonoBehaviour
 
       
         Transform tAtual = botao.transform.Find("BadgeAtual");
-        if (isFaseAtual && !faseCompleta)
+        if (tAtual != null)
         {
-            if (tAtual == null)
-            {
-                GameObject g = new GameObject("BadgeAtual");
-                g.transform.SetParent(botao.transform, false);
-                RectTransform rt = g.AddComponent<RectTransform>();
-                rt.anchorMin = new Vector2(0.5f, 0.5f);
-                rt.anchorMax = new Vector2(0.5f, 0.5f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.anchoredPosition = Vector2.zero;
-                rt.sizeDelta = new Vector2(2.5f, 2.5f);
-
-                Image img = g.AddComponent<Image>();
-                img.sprite = spriteBordaAtual;
-                img.raycastTarget = false;
-            }
-            else
-            {
-                tAtual.gameObject.SetActive(true);
-            }
-        }
-        else
-        {
-            if (tAtual != null) tAtual.gameObject.SetActive(false);
+            tAtual.gameObject.SetActive(false);
         }
 
       
@@ -467,6 +464,24 @@ public class GerenciadorFases : MonoBehaviour
             ConfigurarTodosBotoes();
 
             AtualizarTrofeus();
+
+            // Sincroniza automaticamente com o Servidor .NET
+            try
+            {
+                if (ServicoNuvem.Instancia != null)
+                {
+                    ServicoNuvem.Instancia.EnviarFaseConcluida(
+                        GerenciadorPerfis.PerfilAtivo,
+                        GetPrefixoSave(),
+                        nivelAtual,
+                        faseAtualJogando + 1
+                    );
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning("[Nuvem] Erro não-bloqueante ao sincronizar fase: " + ex.Message);
+            }
         }
     }
 
