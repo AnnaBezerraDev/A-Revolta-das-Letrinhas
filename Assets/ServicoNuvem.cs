@@ -1672,8 +1672,8 @@ public class ServicoNuvem : MonoBehaviour
     }
 
     // Versão do código DESTE build. Aumente a cada novo build publicado (e use o mesmo número no servidor ao enviar o patch).
-    public int versaoLocalCodigo = 104;
-    public string versaoLocalNome = "1.0.4";
+    public int versaoLocalCodigo = 105;
+    public string versaoLocalNome = "1.0.5";
     public bool patchProntoParaAplicar { get; private set; } = false;
     public string novidadesPatch { get; private set; } = "";
 
@@ -1682,9 +1682,19 @@ public class ServicoNuvem : MonoBehaviour
         StartCoroutine(VerificarAtualizacaoCoroutine(onConcluido));
     }
 
+    /// <summary>Atualização baixada que ainda não foi instalada.</summary>
+    private static string CaminhoPatchNovo() => Path.Combine(Application.dataPath, "Managed", "Assembly-CSharp.dll.novo");
+
     public IEnumerator VerificarAtualizacaoCoroutine(System.Action<bool, string> onConcluido = null)
     {
+#if UNITY_EDITOR
+        // No Editor da Unity não há o que atualizar (e gravaria arquivos dentro de Assets)
+        onConcluido?.Invoke(false, "Atualização automática desativada no Editor da Unity.");
+        yield break;
+#else
         string url = $"{servidorUrl}/api/jogo/versao";
+        DtoVersaoResposta info = null;
+        bool servidorRespondeu = false;
         using (UnityWebRequest req = UnityWebRequest.Get(url))
         {
             req.certificateHandler = new ForceAcceptCertificate();
@@ -1693,102 +1703,157 @@ public class ServicoNuvem : MonoBehaviour
 
             if (req.result == UnityWebRequest.Result.Success)
             {
-                DtoVersaoResposta info = null;
+                servidorRespondeu = true;
                 try
                 {
-                    string json = req.downloadHandler.text;
-                    info = JsonUtility.FromJson<DtoVersaoResposta>(json);
+                    info = JsonUtility.FromJson<DtoVersaoResposta>(req.downloadHandler.text);
                 }
                 catch (Exception ex)
                 {
                     Debug.LogWarning($"[AutoUpdater] Erro ao processar versão: {ex.Message}");
                 }
-
-                // Considera a versão do próprio build: sem isso, um PC novo baixava um patch MAIS ANTIGO
-                // que o jogo instalado e voltava o código para trás ao sair do jogo.
-                int versaoAtual = Math.Max(PlayerPrefs.GetInt("VersaoPatchCodigo", 0), versaoLocalCodigo);
-
-                if (info != null && info.temPatch && info.versaoCodigo > versaoAtual)
-                {
-                    Debug.Log($"[AutoUpdater] Nova versão encontrada: v{info.versao} (código {info.versaoCodigo}). Baixando patch...");
-                    yield return StartCoroutine(BaixarEAplicarPatchCoroutine(info, onConcluido));
-                    yield break;
-                }
-                else
-                {
-                    onConcluido?.Invoke(false, "O jogo já está com a versão mais recente da prefeitura!");
-                }
-            }
-            else
-            {
-                onConcluido?.Invoke(false, "Servidor de atualizações offline ou inacessível no momento.");
             }
         }
+
+        // versaoLocalCodigo é a versão do código que está rodando (o patch instalado traz o número dele).
+        // Se já existe um patch baixado esperando instalação, conta a versão dele para não baixar de novo.
+        // (Só o valor salvo não basta: se o jogo for reinstalado, ele ficaria preso na versão antiga.)
+        int versaoBaixada = File.Exists(CaminhoPatchNovo()) ? PlayerPrefs.GetInt("VersaoPatchCodigo", 0) : 0;
+        int versaoAtual = Math.Max(versaoBaixada, versaoLocalCodigo);
+
+        if (info != null && info.temPatch && info.versaoCodigo > versaoAtual)
+        {
+            Debug.Log($"[AutoUpdater] Nova versão encontrada: v{info.versao} (código {info.versaoCodigo}). Baixando patch...");
+            yield return StartCoroutine(BaixarEAplicarPatchCoroutine(info, onConcluido));
+            yield break;
+        }
+
+        // Atualização baixada numa vez anterior e ainda não instalada: oferece instalar agora
+        if (File.Exists(CaminhoPatchNovo()))
+        {
+            if (PlayerPrefs.GetInt("VersaoPatchCodigo", 0) > versaoLocalCodigo)
+            {
+                try { CriarScriptDeInstalacao(); } catch (Exception ex) { Debug.LogWarning($"[AutoUpdater] {ex.Message}"); }
+                patchProntoParaAplicar = true;
+                OferecerReinicio(PlayerPrefs.GetString("VersaoPatchNome", "nova"));
+                onConcluido?.Invoke(true, "Atualização pronta para instalar.");
+                yield break;
+            }
+            // Arquivo velho (este jogo já é igual ou mais novo que ele): descarta
+            try { File.Delete(CaminhoPatchNovo()); } catch { }
+        }
+
+        onConcluido?.Invoke(false, servidorRespondeu
+            ? "O jogo já está com a versão mais recente da prefeitura!"
+            : "Servidor de atualizações offline ou inacessível no momento.");
+#endif
     }
 
     private IEnumerator BaixarEAplicarPatchCoroutine(DtoVersaoResposta info, System.Action<bool, string> onConcluido = null)
     {
         string downloadUrl = info.urlDownloadPatch.StartsWith("http") ? info.urlDownloadPatch : $"{servidorUrl}{info.urlDownloadPatch}";
+        TelaAtualizacao.MostrarBaixando(info.versao, versaoLocalNome, info.novidades, info.tamanhoBytes);
+        float inicio = Time.realtimeSinceStartup;
 
+        byte[] bytes = null;
+        string erroDownload = null;
         using (UnityWebRequest req = UnityWebRequest.Get(downloadUrl))
         {
             req.certificateHandler = new ForceAcceptCertificate();
-            req.timeout = 35;
-            yield return req.SendWebRequest();
-
-            if (req.result == UnityWebRequest.Result.Success)
+            req.timeout = 180;
+            UnityWebRequestAsyncOperation envio = req.SendWebRequest();
+            while (!envio.isDone)
             {
-                byte[] bytes = req.downloadHandler.data;
-                if (bytes != null && bytes.Length > 20000)
-                {
-                    try
-                    {
-                        string managedDir = Path.Combine(Application.dataPath, "Managed");
-                        if (!Directory.Exists(managedDir)) Directory.CreateDirectory(managedDir);
-
-                        string patchNovo = Path.Combine(managedDir, "Assembly-CSharp.dll.novo");
-                        File.WriteAllBytes(patchNovo, bytes);
-
-                        string batPath = Path.Combine(Application.dataPath, "..", "atualizar_jogo.bat");
-                        string batConteudo = "@echo off\r\n" +
-                            "timeout /t 1 /nobreak >nul\r\n" +
-                            "set \"BASE_DIR=%~dp0\"\r\n" +
-                            "if exist \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" (\r\n" +
-                            "    copy /y \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll\" >nul\r\n" +
-                            "    del \"%BASE_DIR%RevoltaDasLetrinhas_Data\\Managed\\Assembly-CSharp.dll.novo\" >nul\r\n" +
-                            ")\r\n" +
-                            "if \"%1\"==\"reiniciar\" (\r\n" +
-                            "    start \"\" \"%BASE_DIR%RevoltaDasLetrinhas.exe\"\r\n" +
-                            ")\r\n" +
-                            "exit\r\n";
-
-                        File.WriteAllText(batPath, batConteudo, Encoding.UTF8);
-
-                        PlayerPrefs.SetInt("VersaoPatchCodigo", info.versaoCodigo);
-                        PlayerPrefs.SetString("VersaoPatchNome", info.versao);
-                        PlayerPrefs.Save();
-
-                        patchProntoParaAplicar = true;
-                        novidadesPatch = info.novidades;
-                        Debug.Log($"[AutoUpdater] Patch v{info.versao} pronto para ser aplicado na saída ou reinício do jogo!");
-                        onConcluido?.Invoke(true, $"Atualização v{info.versao} baixada com sucesso! Será aplicada ao fechar o jogo.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[AutoUpdater] Falha ao salvar patch local: {ex.Message}");
-                        onConcluido?.Invoke(false, "Erro ao gravar arquivo de atualização.");
-                    }
-                }
-                else
-                {
-                    onConcluido?.Invoke(false, "Arquivo de atualização corrompido ou incompleto.");
-                }
+                TelaAtualizacao.AtualizarProgresso(req.downloadProgress, (long)req.downloadedBytes, info.tamanhoBytes);
+                yield return null;
             }
-            else
-            {
-                onConcluido?.Invoke(false, "Falha no download da atualização.");
-            }
+
+            if (req.result == UnityWebRequest.Result.Success) bytes = req.downloadHandler.data;
+            else erroDownload = req.error;
         }
+
+        // Deixa a barra visível por um instante (o arquivo é pequeno e baixa muito rápido)
+        while (Time.realtimeSinceStartup - inicio < 1.5f)
+        {
+            TelaAtualizacao.AtualizarProgresso(bytes != null ? 1f : 0f, bytes?.Length ?? 0, info.tamanhoBytes);
+            yield return null;
+        }
+
+        if (bytes == null)
+        {
+            Debug.LogWarning($"[AutoUpdater] Falha no download: {erroDownload}");
+            TelaAtualizacao.MostrarErro("A atualização não pôde ser baixada (verifique a internet).");
+            onConcluido?.Invoke(false, "Falha no download da atualização.");
+            yield break;
+        }
+        if (bytes.Length < 20000 || (info.tamanhoBytes > 0 && bytes.Length != info.tamanhoBytes))
+        {
+            TelaAtualizacao.MostrarErro("O arquivo da atualização chegou incompleto.");
+            onConcluido?.Invoke(false, "Arquivo de atualização corrompido ou incompleto.");
+            yield break;
+        }
+
+        try
+        {
+            string managedDir = Path.Combine(Application.dataPath, "Managed");
+            if (!Directory.Exists(managedDir)) Directory.CreateDirectory(managedDir);
+            File.WriteAllBytes(CaminhoPatchNovo(), bytes);
+            CriarScriptDeInstalacao();
+
+            PlayerPrefs.SetInt("VersaoPatchCodigo", info.versaoCodigo);
+            PlayerPrefs.SetString("VersaoPatchNome", info.versao);
+            PlayerPrefs.Save();
+
+            patchProntoParaAplicar = true;
+            novidadesPatch = info.novidades;
+            Debug.Log($"[AutoUpdater] Patch v{info.versao} pronto para ser aplicado ao reiniciar ou sair do jogo.");
+            OferecerReinicio(info.versao);
+            onConcluido?.Invoke(true, $"Atualização v{info.versao} baixada com sucesso!");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AutoUpdater] Falha ao salvar patch local: {ex.Message}");
+            TelaAtualizacao.MostrarErro("Não foi possível gravar a atualização nesta pasta (falta permissão?).");
+            onConcluido?.Invoke(false, "Erro ao gravar arquivo de atualização.");
+        }
+    }
+
+    private void OferecerReinicio(string versao)
+    {
+        TelaAtualizacao.MostrarPronta(versao, ReiniciarComAtualizacao, TelaAtualizacao.Esconder);
+    }
+
+    /// <summary>
+    /// Script que troca a DLL depois que o jogo fecha (o arquivo em uso não pode ser trocado com o jogo aberto).
+    /// Usa o nome real do executável e da pasta de dados deste jogo.
+    /// </summary>
+    private static void CriarScriptDeInstalacao()
+    {
+        string pastaDados = Path.GetFileName(Application.dataPath);            // ex.: RevoltaDasLetrinhas_Data
+        string executavel = pastaDados.EndsWith("_Data") ? pastaDados.Substring(0, pastaDados.Length - 5) + ".exe" : "RevoltaDasLetrinhas.exe";
+        string batPath = Path.Combine(Application.dataPath, "..", "atualizar_jogo.bat");
+        // Tenta a troca por até ~30 s: o arquivo fica travado até o jogo terminar de fechar.
+        // ("ping" como pausa: o "timeout" não funciona quando o script roda sem janela)
+        string batConteudo = "@echo off\r\n" +
+            "set \"BASE_DIR=%~dp0\"\r\n" +
+            $"set \"MANAGED=%BASE_DIR%{pastaDados}\\Managed\"\r\n" +
+            "set TENTATIVAS=0\r\n" +
+            ":esperar\r\n" +
+            "ping -n 3 127.0.0.1 >nul\r\n" +
+            "if not exist \"%MANAGED%\\Assembly-CSharp.dll.novo\" goto iniciar\r\n" +
+            "copy /y \"%MANAGED%\\Assembly-CSharp.dll.novo\" \"%MANAGED%\\Assembly-CSharp.dll\" >nul 2>&1\r\n" +
+            "if not errorlevel 1 goto copiado\r\n" +
+            "set /a TENTATIVAS+=1\r\n" +
+            "if %TENTATIVAS% lss 15 goto esperar\r\n" +
+            "goto iniciar\r\n" +
+            ":copiado\r\n" +
+            "del \"%MANAGED%\\Assembly-CSharp.dll.novo\" >nul 2>&1\r\n" +
+            ":iniciar\r\n" +
+            $"if \"%1\"==\"reiniciar\" start \"\" \"%BASE_DIR%{executavel}\"\r\n" +
+            "exit\r\n";
+
+        // Sem BOM: um BOM no começo faz o Windows não reconhecer o "@echo off"
+        File.WriteAllText(batPath, batConteudo, new UTF8Encoding(false));
     }
 
     /// <summary>
