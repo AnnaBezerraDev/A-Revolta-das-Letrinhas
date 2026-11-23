@@ -406,6 +406,9 @@ public class ControlesJanelaDesktop : MonoBehaviour
         }
         catch { }
 
+        // Libera na hora a vaga deste computador no limite de computadores da escola
+        try { if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.EncerrarSessaoDaMaquina(); } catch { }
+
         Application.Quit();
 
         // Garante fechamento imediato do executavel no Windows

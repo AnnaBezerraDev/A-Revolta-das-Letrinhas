@@ -108,11 +108,50 @@ public class GerenciadorPerfis : MonoBehaviour
         CarregarRecursosTema();
         CriarUILobby();
         ServicoNuvem.OnEscolaSincronizada += AtualizarTextoBotaoEscola;
+        ServicoNuvem.OnCadastroRecusado += AoRecusarCadastro;
     }
 
     void OnDestroy()
     {
         ServicoNuvem.OnEscolaSincronizada -= AtualizarTextoBotaoEscola;
+        ServicoNuvem.OnCadastroRecusado -= AoRecusarCadastro;
+    }
+
+    private string avisoCadastroPendente = "";
+
+    /// <summary>
+    /// O servidor recusou o cadastro (limite de alunos da licença): o aluno sai da lista deste computador.
+    /// O progresso salvo no PC não é apagado.
+    /// </summary>
+    private void AoRecusarCadastro(string aluno, string motivo)
+    {
+        List<string> perfis = ObterListaPerfis();
+        if (perfis.RemoveAll(p => string.Equals(p, aluno, StringComparison.OrdinalIgnoreCase)) > 0)
+        {
+            DefinirAlunosDaEscola(perfis);
+        }
+
+        string aviso = $"Atenção: o cadastro de \"{aluno}\" foi cancelado. {motivo}";
+        if (modalPerfis != null && modalPerfis.activeSelf && textoAvisoNovoAluno != null)
+        {
+            textoAvisoNovoAluno.text = aviso;
+        }
+        else
+        {
+            avisoCadastroPendente = aviso;
+        }
+        AtualizarCrachaELista();
+    }
+
+    /// <summary>Alunos contados no limite da licença (o "Aluno 1" é só o perfil padrão).</summary>
+    private static int ContarAlunosParaLimite()
+    {
+        int total = 0;
+        foreach (var p in ObterListaPerfis())
+        {
+            if (p != "Aluno 1") total++;
+        }
+        return total;
     }
 
     void Update()
@@ -1409,6 +1448,11 @@ public class GerenciadorPerfis : MonoBehaviour
             AtualizarTextoBotaoEscola();
             GarantirSalaCadastroValida();
             AtualizarListaCards();
+            if (!string.IsNullOrEmpty(avisoCadastroPendente) && textoAvisoNovoAluno != null)
+            {
+                textoAvisoNovoAluno.text = avisoCadastroPendente;
+                avisoCadastroPendente = "";
+            }
 
             // Busca no servidor alunos/salas cadastrados no painel desde a última vez
             if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.SincronizarAgora();
@@ -1429,6 +1473,14 @@ public class GerenciadorPerfis : MonoBehaviour
     {
         if (inputNomeNovoAluno == null) return;
         string nome = inputNomeNovoAluno.text.Trim();
+
+        ServicoNuvem servico = ServicoNuvem.Instancia;
+        if (servico != null && !servico.PodeCadastrarAluno(ContarAlunosParaLimite(), out string motivoLimite))
+        {
+            if (textoAvisoNovoAluno != null) textoAvisoNovoAluno.text = "Atenção: " + motivoLimite;
+            inputNomeNovoAluno.ActivateInputField();
+            return;
+        }
 
         ResultadoCriacaoPerfil res = TentarCriarPerfil(nome, out string criado);
 
@@ -1577,9 +1629,13 @@ public class GerenciadorPerfis : MonoBehaviour
         if (textoContadorAlunos != null)
         {
             string infoSala = (salaFiltroAtual == "Todas as Salas") ? "todas as salas" : $"Sala <b>{salaFiltroAtual}</b>";
+            ServicoNuvem snLimite = ServicoNuvem.Instancia;
+            string infoLimite = (snLimite != null && snLimite.temLimiteAlunos)
+                ? $"  <color=#5D4037>({ContarAlunosParaLimite()} de {snLimite.limiteAlunos} vagas)</color>"
+                : "";
             if (string.IsNullOrEmpty(filtroNormalizado))
             {
-                textoContadorAlunos.text = $"<b>{filtrados.Count}</b> aluno(s) em {infoSala}";
+                textoContadorAlunos.text = $"<b>{filtrados.Count}</b> aluno(s) em {infoSala}{infoLimite}";
             }
             else
             {

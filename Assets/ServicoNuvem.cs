@@ -206,6 +206,10 @@ public class ServicoNuvem : MonoBehaviour
         public int diasRestantesContrato;
         public bool contratoValido;
         public string tokenAcesso;
+        public bool temLimiteAlunos;
+        public int limiteAlunos;
+        public int totalAlunos;
+        public int limiteMaquinas;
         public List<DtoTurmaRecebida> turmas;
     }
 
@@ -327,10 +331,14 @@ public class ServicoNuvem : MonoBehaviour
 
         CarregarConfiguracaoLocal();
         CarregarFila();
+
+        // Até o servidor responder, vale o que ficou salvo da última verificação da licença
+        AvaliarLicencaSemServidor(tokenEscola, false);
     }
 
     void Start()
     {
+        StartCoroutine(RotinaLicencaCoroutine());
         StartCoroutine(ConectarESincronizarCoroutine());
         StartCoroutine(RotinaSincronizacaoCoroutine());
         StartCoroutine(VerificarAtualizacaoCoroutine());
@@ -339,6 +347,7 @@ public class ServicoNuvem : MonoBehaviour
     void OnApplicationQuit()
     {
         SalvarFila();
+        EncerrarSessaoDaMaquina();
     }
 
     // =========================================================
@@ -452,6 +461,9 @@ public class ServicoNuvem : MonoBehaviour
             else
             {
                 conectadoAoServidor = false;
+                DtoErroServidor erroLicenca = LerErro(req.downloadHandler?.text);
+                if ((req.responseCode == 403 || req.responseCode == 404) && erroLicenca != null && !string.IsNullOrEmpty(erroLicenca.codigo))
+                    AplicarBloqueio(token, erroLicenca.codigo, erroLicenca.erro, erroLicenca.codigo != "limite_maquinas");
                 if (req.responseCode == 404)
                     Debug.LogWarning($"[ServicoNuvem] A escola com token '{token}' não existe no servidor {servidorUrl}. Cadastre-a no painel ou corrija o config_escola.json.");
                 else
@@ -472,6 +484,10 @@ public class ServicoNuvem : MonoBehaviour
         validadeContrato = !string.IsNullOrEmpty(info.dataExpiracaoContrato) ? info.dataExpiracaoContrato : "Sem expiração";
         diasRestantesContrato = info.diasRestantesContrato;
         contratoValido = info.contratoValido;
+        temExpiracaoContrato = !string.IsNullOrEmpty(info.dataExpiracaoContrato);
+        temLimiteAlunos = info.temLimiteAlunos;
+        limiteAlunos = info.limiteAlunos;
+        if (info.limiteMaquinas > 0) limiteMaquinas = info.limiteMaquinas;
 
         List<string> perfisLocaisAntes = GerenciadorPerfis.ObterListaPerfis();
 
@@ -685,6 +701,7 @@ public class ServicoNuvem : MonoBehaviour
 
                     // Ao trocar de escola não há migração: os alunos deste PC pertencem à escola anterior.
                     AplicarInfoEscola(info, tokenFormatado, false);
+                    VerificarLicencaAgora();
 
                     callback?.Invoke(true, $"{info.nomeEscola} ({info.municipio}/{info.uf})");
                     yield break;
@@ -699,6 +716,11 @@ public class ServicoNuvem : MonoBehaviour
             else if (req.responseCode == 404)
             {
                 erroMsg = "Escola não encontrada para este token.";
+            }
+            else if (req.responseCode == 403)
+            {
+                DtoErroServidor erroLicenca = LerErro(req.downloadHandler?.text);
+                if (erroLicenca != null && !string.IsNullOrEmpty(erroLicenca.erro)) erroMsg = erroLicenca.erro;
             }
 
             callback?.Invoke(false, erroMsg);
@@ -1030,11 +1052,31 @@ public class ServicoNuvem : MonoBehaviour
     /// <summary>
     /// Decide o que fazer com uma operação depois da resposta do servidor.
     /// </summary>
-    private static ResultadoEnvio Classificar(UnityWebRequest req, OperacaoNuvem op, bool naoEncontradoEhSucesso)
+    private ResultadoEnvio Classificar(UnityWebRequest req, OperacaoNuvem op, bool naoEncontradoEhSucesso)
     {
         if (req.result == UnityWebRequest.Result.Success) return ResultadoEnvio.Sucesso;
 
         long codigo = req.responseCode;
+        string corpo = req.downloadHandler?.text ?? "";
+
+        // A escola atingiu o limite de alunos da licença: o cadastro é cancelado (não adianta reenviar)
+        if (codigo == 409 && corpo.Contains("\"limite_alunos\""))
+        {
+            DtoErroServidor e = LerErro(corpo);
+            string motivo = e != null && !string.IsNullOrEmpty(e.erro) ? e.erro : "A escola atingiu o limite de alunos da licença.";
+            Debug.LogWarning($"[ServicoNuvem] Cadastro de '{op.aluno}' recusado: {motivo}");
+            if (MesmoToken(op.token, tokenEscola)) OnCadastroRecusado?.Invoke(op.aluno, motivo);
+            return ResultadoEnvio.Descartar;
+        }
+
+        // Licença bloqueada (contrato vencido, escola desativada...): guarda para enviar quando liberar
+        if (codigo == 403)
+        {
+            DtoErroServidor e = LerErro(corpo);
+            if (e != null && !string.IsNullOrEmpty(e.codigo) && MesmoToken(op.token, tokenEscola))
+                AplicarBloqueio(op.token, e.codigo, e.erro, e.codigo != "limite_maquinas");
+            return ResultadoEnvio.TentarDepois;
+        }
         if (codigo == 404 && naoEncontradoEhSucesso) return ResultadoEnvio.Descartar;
 
         // Dados recusados pelo servidor: tenta algumas vezes (o servidor pode estar sendo atualizado) e depois desiste
@@ -1099,6 +1141,362 @@ public class ServicoNuvem : MonoBehaviour
             {
                 yield return StartCoroutine(ConectarESincronizarCoroutine());
             }
+        }
+    }
+
+    // =========================================================
+    // LICENÇA: COMPUTADORES EM USO, VENCIMENTO E LIMITE DE ALUNOS
+    // O jogo avisa o servidor a cada minuto que este computador está em uso.
+    // O servidor recusa quando o contrato venceu, a escola foi desativada,
+    // o computador foi bloqueado ou já há o máximo de computadores em uso.
+    // Sem internet, vale a última verificação por até DIAS_TOLERANCIA_OFFLINE dias.
+    // =========================================================
+
+    public enum EstadoLicenca { Verificando, Liberada, Bloqueada }
+    public EstadoLicenca estadoLicenca { get; private set; } = EstadoLicenca.Verificando;
+    public string codigoBloqueio { get; private set; } = "";
+    public string mensagemBloqueio { get; private set; } = "";
+    public bool temLimiteAlunos { get; private set; }
+    public int limiteAlunos { get; private set; }
+    public int maquinasEmUso { get; private set; }
+    public int limiteMaquinas { get; private set; } = 100;
+    public bool temExpiracaoContrato { get; private set; }
+    public bool licencaValidadaOnline { get; private set; }
+
+    public delegate void CadastroRecusadoHandler(string aluno, string motivo);
+    /// <summary>O servidor recusou o cadastro de um aluno (limite de alunos da escola).</summary>
+    public static event CadastroRecusadoHandler OnCadastroRecusado;
+    public static event System.Action OnLicencaAtualizada;
+
+    private const string KEY_LIC_TOKEN = "Licenca_Token";
+    private const string KEY_LIC_VALIDACAO = "Licenca_UltimaValidacaoUtc";
+    private const string KEY_LIC_PRIMEIRO_USO = "Licenca_PrimeiroUsoSemValidacaoUtc";
+    private const string KEY_LIC_EXPIRACAO = "Licenca_DataExpiracao";
+    private const string KEY_LIC_BLOQUEIO_CODIGO = "Licenca_BloqueioCodigo";
+    private const string KEY_LIC_BLOQUEIO_MSG = "Licenca_BloqueioMensagem";
+    private const string KEY_MAQUINA_ID = "Licenca_IdentificadorMaquina";
+    private const int DIAS_TOLERANCIA_OFFLINE = 7;
+    private const float ESPERA_BLOQUEADO = 30f;
+
+    private float intervaloSinal = 60f;
+    private bool verificandoLicenca = false;
+    private bool sessaoEncerrada = false;
+
+    [System.Serializable]
+    public class DtoSinalMaquinaEnvio
+    {
+        public string identificador;
+        public string nome;
+        public string versaoJogo;
+    }
+
+    [System.Serializable]
+    public class DtoSinalResposta
+    {
+        public bool liberado;
+        public int maquinasEmUso;
+        public int limiteMaquinas;
+        public int intervaloSinalSegundos;
+        public bool temExpiracao;
+        public string dataExpiracao;
+        public int diasRestantes;
+        public bool temLimiteAlunos;
+        public int limiteAlunos;
+        public int totalAlunos;
+    }
+
+    [System.Serializable]
+    public class DtoErroServidor
+    {
+        public string erro;
+        public string codigo;
+        public bool temExpiracao;
+        public string dataExpiracao;
+        public int diasRestantes;
+        public int maquinasEmUso;
+        public int limiteMaquinas;
+    }
+
+    /// <summary>Identificador único deste computador (do hardware; se indisponível, um gerado e salvo).</summary>
+    public static string IdentificadorMaquina
+    {
+        get
+        {
+            string id = SystemInfo.deviceUniqueIdentifier;
+            if (string.IsNullOrEmpty(id) || id == SystemInfo.unsupportedIdentifier)
+            {
+                id = PlayerPrefs.GetString(KEY_MAQUINA_ID, "");
+                if (string.IsNullOrEmpty(id))
+                {
+                    id = Guid.NewGuid().ToString("N");
+                    PlayerPrefs.SetString(KEY_MAQUINA_ID, id);
+                    PlayerPrefs.Save();
+                }
+            }
+            return id;
+        }
+    }
+
+    private static DtoErroServidor LerErro(string corpo)
+    {
+        if (string.IsNullOrEmpty(corpo) || !corpo.TrimStart().StartsWith("{")) return null;
+        try { return JsonUtility.FromJson<DtoErroServidor>(corpo); } catch { return null; }
+    }
+
+    /// <summary>Confere a licença com o servidor agora (botão "Tentar novamente", troca de token).</summary>
+    public void VerificarLicencaAgora()
+    {
+        if (!verificandoLicenca) StartCoroutine(EnviarSinalCoroutine());
+    }
+
+    /// <summary>
+    /// Pode cadastrar mais um aluno? (limite de alunos da licença da escola)
+    /// </summary>
+    public bool PodeCadastrarAluno(int alunosNoJogo, out string motivo)
+    {
+        motivo = "";
+        if (!temLimiteAlunos || alunosNoJogo < limiteAlunos) return true;
+        motivo = $"A escola atingiu o limite de {limiteAlunos} alunos da licença. Fale com a coordenação para liberar mais vagas.";
+        return false;
+    }
+
+    private IEnumerator RotinaLicencaCoroutine()
+    {
+        while (true)
+        {
+            yield return StartCoroutine(EnviarSinalCoroutine());
+            // Bloqueado: tenta de novo mais rápido (ex.: alguém fechou o jogo em outro computador)
+            float espera = estadoLicenca == EstadoLicenca.Bloqueada ? ESPERA_BLOQUEADO : intervaloSinal;
+            yield return new WaitForSecondsRealtime(espera);
+        }
+    }
+
+    private IEnumerator EnviarSinalCoroutine()
+    {
+        if (verificandoLicenca) yield break;
+        verificandoLicenca = true;
+
+        string token = tokenEscola;
+        string json = JsonUtility.ToJson(new DtoSinalMaquinaEnvio
+        {
+            identificador = IdentificadorMaquina,
+            nome = SystemInfo.deviceName,
+            versaoJogo = versaoLocalNome
+        });
+
+        long codigoHttp = 0;
+        string corpo = "";
+        yield return StartCoroutine(PostJsonCoroutine("/api/jogo/maquina/sinal", token, json, req =>
+        {
+            codigoHttp = req.responseCode;
+            corpo = req.downloadHandler?.text ?? "";
+        }));
+
+        DtoErroServidor erro = LerErro(corpo);
+        if (codigoHttp == 200)
+        {
+            DtoSinalResposta r = null;
+            try { r = JsonUtility.FromJson<DtoSinalResposta>(corpo); } catch { }
+            if (r != null && r.liberado)
+            {
+                intervaloSinal = Mathf.Clamp(r.intervaloSinalSegundos > 0 ? r.intervaloSinalSegundos : 60, 20, 300);
+                maquinasEmUso = r.maquinasEmUso;
+                limiteMaquinas = r.limiteMaquinas;
+                temLimiteAlunos = r.temLimiteAlunos;
+                limiteAlunos = r.limiteAlunos;
+                temExpiracaoContrato = r.temExpiracao;
+                if (r.temExpiracao)
+                {
+                    diasRestantesContrato = r.diasRestantes;
+                    validadeContrato = r.dataExpiracao;
+                }
+                SalvarLicencaValidada(token, r.temExpiracao ? r.dataExpiracao : "");
+                Liberar(true);
+            }
+            else
+            {
+                AvaliarLicencaSemServidor(token, true);
+            }
+        }
+        else if ((codigoHttp == 403 || codigoHttp == 404) && erro != null && !string.IsNullOrEmpty(erro.codigo))
+        {
+            // limite de computadores é passageiro: não fica gravado para o modo sem internet
+            AplicarBloqueio(token, erro.codigo, erro.erro, erro.codigo != "limite_maquinas");
+        }
+        else
+        {
+            // Sem internet, servidor parado ou servidor ainda sem esta verificação
+            AvaliarLicencaSemServidor(token, true);
+        }
+
+        verificandoLicenca = false;
+    }
+
+    private void SalvarLicencaValidada(string token, string dataExpiracao)
+    {
+        PlayerPrefs.SetString(KEY_LIC_TOKEN, token);
+        PlayerPrefs.SetString(KEY_LIC_VALIDACAO, DateTime.UtcNow.Ticks.ToString());
+        PlayerPrefs.SetString(KEY_LIC_EXPIRACAO, dataExpiracao ?? "");
+        PlayerPrefs.DeleteKey(KEY_LIC_BLOQUEIO_CODIGO);
+        PlayerPrefs.DeleteKey(KEY_LIC_BLOQUEIO_MSG);
+        PlayerPrefs.DeleteKey(KEY_LIC_PRIMEIRO_USO);
+        PlayerPrefs.Save();
+    }
+
+    /// <summary>
+    /// Decide sem o servidor: último bloqueio informado, data do contrato salva e tempo sem validar pela internet.
+    /// </summary>
+    private void AvaliarLicencaSemServidor(string token, bool servidorConsultado)
+    {
+        bool mesmoToken = MesmoToken(PlayerPrefs.GetString(KEY_LIC_TOKEN, ""), token);
+
+        // 1. O último bloqueio informado pelo servidor para esta escola continua valendo
+        string codigoSalvo = mesmoToken ? PlayerPrefs.GetString(KEY_LIC_BLOQUEIO_CODIGO, "") : "";
+        if (!string.IsNullOrEmpty(codigoSalvo))
+        {
+            AplicarBloqueio(token, codigoSalvo, PlayerPrefs.GetString(KEY_LIC_BLOQUEIO_MSG, ""), false);
+            return;
+        }
+
+        // 2. Contrato vencido pela data salva (o contrato vale até o fim do dia)
+        string expiracao = mesmoToken ? PlayerPrefs.GetString(KEY_LIC_EXPIRACAO, "") : "";
+        if (!string.IsNullOrEmpty(expiracao) &&
+            DateTime.TryParseExact(expiracao, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out DateTime dataExp) &&
+            DateTime.UtcNow >= dataExp.Date.AddDays(1).AddHours(3))
+        {
+            AplicarBloqueio(token, "contrato_vencido",
+                $"O contrato da prefeitura venceu em {dataExp:dd/MM/yyyy}. O jogo volta a funcionar assim que o contrato for renovado.", false);
+            return;
+        }
+
+        // 3. Tempo sem confirmar a licença pela internet
+        DateTime referencia;
+        if (mesmoToken && long.TryParse(PlayerPrefs.GetString(KEY_LIC_VALIDACAO, ""), out long ticks))
+        {
+            referencia = new DateTime(ticks, DateTimeKind.Utc);
+        }
+        else
+        {
+            if (!long.TryParse(PlayerPrefs.GetString(KEY_LIC_PRIMEIRO_USO, ""), out long primeiro))
+            {
+                primeiro = DateTime.UtcNow.Ticks;
+                PlayerPrefs.SetString(KEY_LIC_PRIMEIRO_USO, primeiro.ToString());
+                PlayerPrefs.Save();
+            }
+            referencia = new DateTime(primeiro, DateTimeKind.Utc);
+        }
+
+        double dias = (DateTime.UtcNow - referencia).TotalDays;
+        if (dias > DIAS_TOLERANCIA_OFFLINE || dias < -1)
+        {
+            AplicarBloqueio(token, "sem_validacao",
+                $"Este computador está há mais de {DIAS_TOLERANCIA_OFFLINE} dias sem confirmar a licença pela internet. " +
+                "Conecte o computador à internet e clique em \"Tentar novamente\".", false);
+            return;
+        }
+
+        if (servidorConsultado) Debug.Log($"[Licença] Servidor indisponível; usando a licença salva (validada há {dias:0.0} dia(s)).");
+        Liberar(false);
+    }
+
+    private void AplicarBloqueio(string token, string codigo, string mensagem, bool persistir)
+    {
+        if (persistir)
+        {
+            PlayerPrefs.SetString(KEY_LIC_TOKEN, token);
+            PlayerPrefs.SetString(KEY_LIC_BLOQUEIO_CODIGO, codigo);
+            PlayerPrefs.SetString(KEY_LIC_BLOQUEIO_MSG, mensagem ?? "");
+            PlayerPrefs.Save();
+        }
+
+        bool mudou = estadoLicenca != EstadoLicenca.Bloqueada || codigoBloqueio != codigo;
+        estadoLicenca = EstadoLicenca.Bloqueada;
+        codigoBloqueio = codigo;
+        mensagemBloqueio = string.IsNullOrEmpty(mensagem) ? "O uso do jogo não está liberado para esta escola." : mensagem;
+        if (mudou) Debug.LogWarning($"[Licença] Jogo bloqueado ({codigo}): {mensagemBloqueio}");
+        MostrarTelaBloqueio();
+        OnLicencaAtualizada?.Invoke();
+    }
+
+    private void Liberar(bool validadaOnline)
+    {
+        bool estavaBloqueada = estadoLicenca == EstadoLicenca.Bloqueada;
+        estadoLicenca = EstadoLicenca.Liberada;
+        codigoBloqueio = "";
+        mensagemBloqueio = "";
+        if (validadaOnline) licencaValidadaOnline = true;
+        TelaBloqueioLicenca.Esconder();
+        if (estavaBloqueada)
+        {
+            Debug.Log("[Licença] Jogo liberado.");
+            StartCoroutine(ConectarESincronizarCoroutine());
+        }
+        OnLicencaAtualizada?.Invoke();
+    }
+
+    private void MostrarTelaBloqueio()
+    {
+        string titulo;
+        switch (codigoBloqueio)
+        {
+            case "contrato_vencido": titulo = "Contrato da prefeitura vencido"; break;
+            case "escola_inativa": titulo = "Acesso da escola desativado"; break;
+            case "maquina_bloqueada": titulo = "Este computador foi bloqueado"; break;
+            case "limite_maquinas": titulo = "Limite de computadores atingido"; break;
+            case "escola_nao_encontrada": titulo = "Escola não encontrada"; break;
+            case "sem_validacao": titulo = "Conecte-se à internet"; break;
+            default: titulo = "Jogo bloqueado"; break;
+        }
+
+        string mensagem = mensagemBloqueio;
+        if (codigoBloqueio == "limite_maquinas") mensagem += "\n<size=22><color=#64748B>Tentando de novo sozinho a cada 30 segundos.</color></size>";
+
+        string escola = !string.IsNullOrEmpty(nomeEscolaConectada) ? nomeEscolaConectada + "  ·  " : "";
+        string detalhes = $"{escola}Token: {tokenEscola}  ·  Computador: {SystemInfo.deviceName}";
+        TelaBloqueioLicenca.Mostrar(titulo, mensagem, detalhes, codigoBloqueio != "limite_maquinas");
+    }
+
+    /// <summary>Usado pela tela de bloqueio: troca o token da escola e revalida a licença.</summary>
+    public void TrocarTokenPelaTelaDeBloqueio(string token)
+    {
+        ValidarEVincularToken(token, (ok, msg) =>
+        {
+            if (ok)
+            {
+                TelaBloqueioLicenca.MostrarRetorno($"Token aceito: {msg}. Verificando a licença...", false);
+                VerificarLicencaAgora();
+            }
+            else
+            {
+                TelaBloqueioLicenca.MostrarRetorno(msg, true);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Avisa o servidor que este computador saiu do jogo, liberando a vaga na hora
+    /// (sem isso, a vaga fica ocupada por até 3 minutos). Espera no máximo 2 segundos.
+    /// </summary>
+    public void EncerrarSessaoDaMaquina()
+    {
+        if (sessaoEncerrada || estadoLicenca != EstadoLicenca.Liberada) return;
+        sessaoEncerrada = true;
+        try
+        {
+            string json = JsonUtility.ToJson(new DtoSinalMaquinaEnvio { identificador = IdentificadorMaquina, nome = SystemInfo.deviceName, versaoJogo = versaoLocalNome });
+            using (var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(2) })
+            using (var pedido = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post,
+                       $"{servidorUrl}/api/jogo/maquina/encerrar?token={Uri.EscapeDataString(tokenEscola)}"))
+            {
+                pedido.Headers.Add("X-Escola-Token", tokenEscola);
+                pedido.Content = new System.Net.Http.StringContent(json, Encoding.UTF8, "application/json");
+                http.SendAsync(pedido).Wait(2000);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[Licença] Não foi possível avisar a saída ao servidor: {ex.Message}");
         }
     }
 
@@ -1274,8 +1672,8 @@ public class ServicoNuvem : MonoBehaviour
     }
 
     // Versão do código DESTE build. Aumente a cada novo build publicado (e use o mesmo número no servidor ao enviar o patch).
-    public int versaoLocalCodigo = 103;
-    public string versaoLocalNome = "1.0.3";
+    public int versaoLocalCodigo = 104;
+    public string versaoLocalNome = "1.0.4";
     public bool patchProntoParaAplicar { get; private set; } = false;
     public string novidadesPatch { get; private set; } = "";
 
@@ -1398,6 +1796,7 @@ public class ServicoNuvem : MonoBehaviour
     /// </summary>
     public void ReiniciarComAtualizacao()
     {
+        EncerrarSessaoDaMaquina();
         try
         {
             PlayerPrefs.Save();

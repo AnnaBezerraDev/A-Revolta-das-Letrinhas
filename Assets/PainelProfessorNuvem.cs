@@ -367,7 +367,14 @@ public class PainelProfessorNuvem : MonoBehaviour
             ? $"{dados.nomeEscola} ({dados.municipio})"
             : (sn != null && !string.IsNullOrEmpty(sn.nomeEscolaConectada) ? $"{sn.nomeEscolaConectada} ({sn.municipioConectado})" : "Escola");
         string escopo = ProfessorRestrito ? $"Sala {AreaDoProfessor.TurmaRestritaNome}" : "Todas as salas";
-        txtSubtitulo.text = $"{escola}  ·  {escopo}  ·  {AreaDoProfessor.NomeProfessorLogado}";
+        string aviso = "";
+        if (sn != null && sn.temExpiracaoContrato && sn.diasRestantesContrato <= 30)
+        {
+            aviso = sn.diasRestantesContrato <= 0
+                ? "  ·  <color=#FDE68A><b>Contrato vence hoje</b></color>"
+                : $"  ·  <color=#FDE68A><b>Contrato vence em {sn.diasRestantesContrato} dia(s)</b></color>";
+        }
+        txtSubtitulo.text = $"{escola}  ·  {escopo}  ·  {AreaDoProfessor.NomeProfessorLogado}{aviso}";
 
         if (btnSenhaGeral != null)
             btnSenhaGeral.SetActive(area != null && area.SessaoLocalGeral);
