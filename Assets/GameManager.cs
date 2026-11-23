@@ -54,6 +54,7 @@ public class GameManager : MonoBehaviour
     [Header("Sistema de Vidas (Agora 2 Vidas)")]
     public int vidasMaximas = 2;
     private int vidasAtuais;
+    private float tempoInicioFase; // para enviar ao servidor quanto tempo o aluno levou na fase
 
     [Header("Visual das Cartas")]
     public Sprite[] temasDasCartas;
@@ -150,6 +151,7 @@ public class GameManager : MonoBehaviour
         }
 
         vidasAtuais = vidasMaximas;
+        tempoInicioFase = Time.realtimeSinceStartup;
         AtualizarUIVidas();
 
         if (actionScript == null) actionScript = FindFirstObjectByType<Action>();
@@ -842,7 +844,11 @@ public class GameManager : MonoBehaviour
 
             if (sfxSource != null && somAcerto != null) sfxSource.PlayOneShot(somAcerto);
 
-            if (gerenciadorFases != null) gerenciadorFases.MarcarFaseComoCompleta();
+            if (gerenciadorFases != null)
+            {
+                int segundosNaFase = Mathf.RoundToInt(Time.realtimeSinceStartup - tempoInicioFase);
+                gerenciadorFases.MarcarFaseComoCompleta(vidasAtuais, vidasMaximas, segundosNaFase);
+            }
 
             string materia = jogandoMatematica ? "Math" : "Port";
             string chaveVidas = $"VidasRestantes_{materia}_{nivelAtualID}_{faseAtualID}";

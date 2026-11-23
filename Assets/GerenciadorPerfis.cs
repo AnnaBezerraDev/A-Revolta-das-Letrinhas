@@ -67,6 +67,20 @@ public class GerenciadorPerfis : MonoBehaviour
     private TMP_InputField inputNomeNovoAluno;
     private TextMeshProUGUI textoAvisoNovoAluno;
 
+    // Componentes de Seleção e Filtro de Sala do Aluno
+    private string salaFiltroAtual = "Todas as Salas";
+    private string salaSelecionadaCadastro = "1º Ano A";
+    private TextMeshProUGUI textoBtnFiltroSala;
+    private TextMeshProUGUI textoBtnSalaCadastro;
+    private GameObject modalSeletorSala;
+    private TextMeshProUGUI textoTituloSeletorSala;
+    private Transform containerCardsSalas;
+    private TMP_InputField inputNovaSala;
+    private TextMeshProUGUI textoFeedbackSeletorSala;
+    public enum ModoSeletorSala { FiltrarLista, DefinirCadastro, MudarSalaAluno }
+    private ModoSeletorSala modoSeletorAtual = ModoSeletorSala.FiltrarLista;
+    private string alunoAlvoMudarSala = "";
+
     // Componentes de Token da Escola
     private GameObject btnEscolaToken;
     private TextMeshProUGUI textoBtnEscola;
@@ -223,6 +237,167 @@ public class GerenciadorPerfis : MonoBehaviour
         PlayerPrefs.Save();
     }
 
+    private const string KEY_LISTA_SALAS = "Lista_Salas_Cadastradas";
+    private static readonly string[] SALAS_PADRAO = new string[]
+    {
+        "1º Ano A", "1º Ano B", "2º Ano A", "2º Ano B", "3º Ano A", "3º Ano B", "4º Ano A", "5º Ano A"
+    };
+
+    /// <summary>
+    /// Salas exibidas no jogo.
+    /// - Com a escola sincronizada: SOMENTE as salas do servidor + as criadas no jogo que ainda estão sendo enviadas.
+    /// - Sem nunca ter falado com o servidor: a última lista salva; se não houver nenhuma, as salas sugeridas (sem gravá-las).
+    /// </summary>
+    public static List<string> ObterListaSalas()
+    {
+        List<string> salas = new List<string>();
+        void Adicionar(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return;
+            string tr = s.Trim();
+            foreach (var existente in salas)
+            {
+                if (string.Equals(existente, tr, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            salas.Add(tr);
+        }
+
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+
+        // 1. Salas da escola no servidor (última sincronização)
+        if (sn != null && sn.turmasDisponiveis != null)
+        {
+            foreach (var t in sn.turmasDisponiveis) Adicionar(t.nome);
+        }
+
+        // 2. Salas guardadas neste PC (cópia da última lista do servidor + salas criadas aqui)
+        string raw = PlayerPrefs.GetString(KEY_LISTA_SALAS, "");
+        if (!string.IsNullOrEmpty(raw))
+        {
+            foreach (var s in raw.Split(new char[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) Adicionar(s);
+        }
+
+        // 3. Salas criadas no jogo que ainda não chegaram ao servidor
+        if (sn != null)
+        {
+            foreach (var s in sn.ObterSalasPendentes()) Adicionar(s);
+        }
+
+        // 4. Nunca sincronizou e não há nada salvo: mostra sugestões (não são gravadas,
+        //    para não virarem salas "fantasmas" que não existem no banco)
+        if (salas.Count == 0)
+        {
+            foreach (var sp in SALAS_PADRAO) Adicionar(sp);
+        }
+
+        return salas;
+    }
+
+    /// <summary>
+    /// Chamado após sincronizar com o servidor: a lista de salas deste PC passa a ser a do servidor
+    /// (descartando salas antigas/padrão que não existem no banco), mantendo as criadas aqui e ainda pendentes.
+    /// </summary>
+    public static void DefinirSalasDaEscola(List<string> salasServidor, List<string> salasPendentes)
+    {
+        List<string> lista = new List<string>();
+        void Adicionar(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return;
+            string tr = s.Trim();
+            foreach (var existente in lista)
+            {
+                if (string.Equals(existente, tr, StringComparison.OrdinalIgnoreCase)) return;
+            }
+            lista.Add(tr);
+        }
+        if (salasServidor != null) foreach (var s in salasServidor) Adicionar(s);
+        if (salasPendentes != null) foreach (var s in salasPendentes) Adicionar(s);
+
+        StringBuilder sb = new StringBuilder();
+        foreach (var s in lista)
+        {
+            if (sb.Length > 0) sb.Append(";");
+            sb.Append(s);
+        }
+        PlayerPrefs.SetString(KEY_LISTA_SALAS, sb.ToString());
+        PlayerPrefs.Save();
+    }
+
+    /// <summary>Primeira sala disponível (para cadastros sem sala escolhida).</summary>
+    public static string ObterSalaPadrao()
+    {
+        List<string> salas = ObterListaSalas();
+        return salas.Count > 0 ? salas[0] : "1º Ano A";
+    }
+
+    public static void SalvarListaSalas(List<string> lista)
+    {
+        if (lista == null) return;
+        StringBuilder sb = new StringBuilder();
+        foreach (var s in lista)
+        {
+            string tr = s.Trim();
+            if (!string.IsNullOrEmpty(tr))
+            {
+                if (sb.Length > 0) sb.Append(";");
+                sb.Append(tr);
+            }
+        }
+        PlayerPrefs.SetString(KEY_LISTA_SALAS, sb.ToString());
+        PlayerPrefs.Save();
+    }
+
+    public static void CadastrarNovaSala(string nomeSala)
+    {
+        if (string.IsNullOrWhiteSpace(nomeSala)) return;
+        string tr = nomeSala.Trim();
+        List<string> salas = ObterListaSalas();
+        if (!salas.Contains(tr))
+        {
+            salas.Add(tr);
+            SalvarListaSalas(salas);
+        }
+    }
+
+    public static string ObterSalaDoAluno(string nomeAluno)
+    {
+        if (string.IsNullOrEmpty(nomeAluno)) return ObterSalaPadrao();
+
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        string turmaNuvem = sn != null ? sn.ObterTurmaDoAluno(nomeAluno) : "";
+        if (!string.IsNullOrEmpty(turmaNuvem)) return turmaNuvem;
+
+        string salva = PlayerPrefs.GetString($"Aluno_Turma_{nomeAluno}", "");
+        if (!string.IsNullOrEmpty(salva)) return salva;
+
+        string salvaSanit = PlayerPrefs.GetString($"Aluno_Turma_{SanitizarNome(nomeAluno)}", "");
+        if (!string.IsNullOrEmpty(salvaSanit)) return salvaSanit;
+
+        // Aluno sem sala conhecida: mostra a primeira sala disponível, mas NÃO grava
+        // (gravar aqui criava salas no PC que não existem no banco)
+        return ObterSalaPadrao();
+    }
+
+    /// <param name="enviarParaNuvem">false quando o aluno acabou de ser criado (o cadastro na nuvem já leva a sala).</param>
+    public static void DefinirSalaDoAluno(string nomeAluno, string nomeSala, bool enviarParaNuvem = true)
+    {
+        if (string.IsNullOrEmpty(nomeAluno) || string.IsNullOrEmpty(nomeSala)) return;
+        string tr = nomeSala.Trim();
+        CadastrarNovaSala(tr);
+
+        PlayerPrefs.SetString($"Aluno_Turma_{nomeAluno}", tr);
+        PlayerPrefs.SetString($"Aluno_Turma_{SanitizarNome(nomeAluno)}", tr);
+        PlayerPrefs.Save();
+
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn != null)
+        {
+            sn.DefinirTurmaDoAluno(nomeAluno, tr, enviarParaNuvem);
+        }
+
+        OnPerfilAlterado?.Invoke();
+    }
+
     public static void SelecionarPerfil(string nome)
     {
         if (string.IsNullOrEmpty(nome)) return;
@@ -283,6 +458,7 @@ public class GerenciadorPerfis : MonoBehaviour
             listaFinal.Add("Aluno 1");
         }
 
+        string perfilAnterior = _perfilAtivo;
         SalvarListaPerfis(listaFinal);
 
         string salvo = PlayerPrefs.GetString(KEY_PERFIL_ATIVO, "");
@@ -297,7 +473,16 @@ public class GerenciadorPerfis : MonoBehaviour
             _perfilAtivo = salvo;
         }
 
-        OnPerfilAlterado?.Invoke();
+        if (_perfilAtivo != perfilAnterior)
+        {
+            // O aluno ativo mudou: atualiza tudo (fases, desbloqueios, troféus...)
+            OnPerfilAlterado?.Invoke();
+        }
+        else if (Instance != null)
+        {
+            // Mesmo aluno: só atualiza a lista e o crachá, sem reiniciar a tela de fases no meio do jogo
+            Instance.AtualizarCrachaELista();
+        }
     }
 
     public static bool CriarPerfil(string nome)
@@ -569,7 +754,7 @@ public class GerenciadorPerfis : MonoBehaviour
         rt.anchorMax = new Vector2(0.5f, 1f);
         rt.pivot = new Vector2(0.5f, 1f);
         rt.anchoredPosition = new Vector2(0f, -32f);
-        rt.sizeDelta = new Vector2(560f, 72f);
+        rt.sizeDelta = new Vector2(650f, 72f);
 
         Image img = badgeLobby.GetComponent<Image>();
         if (spriteBadgeTopo != null)
@@ -813,15 +998,51 @@ public class GerenciadorPerfis : MonoBehaviour
         rtPesqCont.anchoredPosition = new Vector2(0f, -125f);
         rtPesqCont.sizeDelta = new Vector2(1360f, 62f);
 
-        // Input de Pesquisa
+        // Botão Selecionar/Filtrar Sala
+        GameObject goBtnFiltro = new GameObject("BtnFiltroSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goBtnFiltro.transform.SetParent(containerPesquisa.transform, false);
+        RectTransform rtBtnFiltro = goBtnFiltro.GetComponent<RectTransform>();
+        rtBtnFiltro.anchorMin = new Vector2(0f, 0.5f);
+        rtBtnFiltro.anchorMax = new Vector2(0f, 0.5f);
+        rtBtnFiltro.pivot = new Vector2(0f, 0.5f);
+        rtBtnFiltro.anchoredPosition = new Vector2(0f, 0f);
+        rtBtnFiltro.sizeDelta = new Vector2(340f, 52f);
+
+        Image imgBtnFiltro = goBtnFiltro.GetComponent<Image>();
+        imgBtnFiltro.color = new Color(0.12f, 0.35f, 0.7f, 0.95f);
+        if (spriteBtnContinuar != null)
+        {
+            imgBtnFiltro.sprite = spriteBtnContinuar;
+            imgBtnFiltro.type = Image.Type.Sliced;
+            imgBtnFiltro.color = Color.white;
+        }
+
+        Button bFiltro = goBtnFiltro.GetComponent<Button>();
+        bFiltro.onClick.AddListener(() => AbrirModalSeletorSala(ModoSeletorSala.FiltrarLista));
+
+        GameObject goTxtFiltro = new GameObject("TextoFiltro", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxtFiltro.transform.SetParent(goBtnFiltro.transform, false);
+        RectTransform rtTFiltro = goTxtFiltro.GetComponent<RectTransform>();
+        rtTFiltro.anchorMin = Vector2.zero;
+        rtTFiltro.anchorMax = Vector2.one;
+        rtTFiltro.offsetMin = new Vector2(10f, 2f);
+        rtTFiltro.offsetMax = new Vector2(-10f, -2f);
+        textoBtnFiltroSala = goTxtFiltro.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) textoBtnFiltroSala.font = fontJogo;
+        textoBtnFiltroSala.text = $"<b>SALA: {salaFiltroAtual} ▼</b>";
+        textoBtnFiltroSala.fontSize = 17;
+        textoBtnFiltroSala.alignment = TextAlignmentOptions.Center;
+        textoBtnFiltroSala.color = Color.white;
+
+        // Input de Pesquisa (posicionado ao lado do seletor de sala)
         GameObject goPesq = new GameObject("InputPesquisa", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
         goPesq.transform.SetParent(containerPesquisa.transform, false);
         RectTransform rtPesq = goPesq.GetComponent<RectTransform>();
         rtPesq.anchorMin = new Vector2(0f, 0.5f);
         rtPesq.anchorMax = new Vector2(0f, 0.5f);
         rtPesq.pivot = new Vector2(0f, 0.5f);
-        rtPesq.anchoredPosition = new Vector2(0f, 0f);
-        rtPesq.sizeDelta = new Vector2(920f, 52f);
+        rtPesq.anchoredPosition = new Vector2(355f, 0f);
+        rtPesq.sizeDelta = new Vector2(580f, 52f);
 
         Image imgPesq = goPesq.GetComponent<Image>();
         if (spriteBarraPesquisa != null)
@@ -1024,7 +1245,7 @@ public class GerenciadorPerfis : MonoBehaviour
         rtInput.anchorMax = new Vector2(0f, 0f);
         rtInput.pivot = new Vector2(0f, 0f);
         rtInput.anchoredPosition = new Vector2(0f, 4f);
-        rtInput.sizeDelta = new Vector2(980f, 54f);
+        rtInput.sizeDelta = new Vector2(640f, 54f);
 
         Image imgInput = goInput.GetComponent<Image>();
         if (spriteBarraPesquisa != null)
@@ -1059,7 +1280,7 @@ public class GerenciadorPerfis : MonoBehaviour
 
         TextMeshProUGUI tmpPlaceholder = placeholder.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpPlaceholder.font = fontJogo;
-        tmpPlaceholder.text = "Cadastrar novo aluno (ex: Mariana Souza 2º Ano)...";
+        tmpPlaceholder.text = "Nome do novo aluno (ex: Mariana Souza)...";
         tmpPlaceholder.fontSize = 22;
         tmpPlaceholder.fontStyle = FontStyles.Italic;
         tmpPlaceholder.alignment = TextAlignmentOptions.MidlineLeft;
@@ -1134,7 +1355,44 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpAdd.outlineColor = new Color32(40, 20, 10, 220);
         tmpAdd.outlineWidth = 0.18f;
 
+        // Botão Selecionar Sala para Cadastro
+        GameObject goBtnSalaCad = new GameObject("BtnSalaCadastro", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goBtnSalaCad.transform.SetParent(rodape.transform, false);
+        RectTransform rtBtnSalaCad = goBtnSalaCad.GetComponent<RectTransform>();
+        rtBtnSalaCad.anchorMin = new Vector2(0f, 0f);
+        rtBtnSalaCad.anchorMax = new Vector2(0f, 0f);
+        rtBtnSalaCad.pivot = new Vector2(0f, 0f);
+        rtBtnSalaCad.anchoredPosition = new Vector2(655f, 4f);
+        rtBtnSalaCad.sizeDelta = new Vector2(330f, 54f);
+
+        Image imgSalaCad = goBtnSalaCad.GetComponent<Image>();
+        imgSalaCad.color = new Color(0.15f, 0.42f, 0.75f, 0.95f);
+        if (spriteBtnContinuar != null)
+        {
+            imgSalaCad.sprite = spriteBtnContinuar;
+            imgSalaCad.type = Image.Type.Sliced;
+            imgSalaCad.color = Color.white;
+        }
+
+        Button btnSalaCad = goBtnSalaCad.GetComponent<Button>();
+        btnSalaCad.onClick.AddListener(() => AbrirModalSeletorSala(ModoSeletorSala.DefinirCadastro));
+
+        GameObject goTxtSalaCad = new GameObject("Texto", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxtSalaCad.transform.SetParent(goBtnSalaCad.transform, false);
+        RectTransform rtTxtSalaCad = goTxtSalaCad.GetComponent<RectTransform>();
+        rtTxtSalaCad.anchorMin = Vector2.zero;
+        rtTxtSalaCad.anchorMax = Vector2.one;
+        rtTxtSalaCad.sizeDelta = Vector2.zero;
+
+        textoBtnSalaCadastro = goTxtSalaCad.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) textoBtnSalaCadastro.font = fontJogo;
+        textoBtnSalaCadastro.text = $"<b>Sala: {salaSelecionadaCadastro} ▼</b>";
+        textoBtnSalaCadastro.fontSize = 19;
+        textoBtnSalaCadastro.alignment = TextAlignmentOptions.Center;
+        textoBtnSalaCadastro.color = Color.white;
+
         ConstruirModalTokenEscola(janela.transform);
+        ConstruirModalSeletorSala(janela.transform);
         modalPerfis.SetActive(false);
     }
 
@@ -1149,7 +1407,11 @@ public class GerenciadorPerfis : MonoBehaviour
             if (inputPesquisa != null) inputPesquisa.text = "";
             if (inputNomeNovoAluno != null) inputNomeNovoAluno.text = "";
             AtualizarTextoBotaoEscola();
+            GarantirSalaCadastroValida();
             AtualizarListaCards();
+
+            // Busca no servidor alunos/salas cadastrados no painel desde a última vez
+            if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.SincronizarAgora();
         }
     }
 
@@ -1189,7 +1451,15 @@ public class GerenciadorPerfis : MonoBehaviour
             return;
         }
 
-        // Sucesso!
+        // Sucesso! Salva a sala neste PC e cadastra o aluno (já com a sala) no servidor.
+        GarantirSalaCadastroValida();
+        string salaFinal = salaSelecionadaCadastro;
+        DefinirSalaDoAluno(criado, salaFinal, false);
+        if (ServicoNuvem.Instancia != null)
+        {
+            ServicoNuvem.Instancia.CadastrarAlunoNuvem(criado, "", salaFinal);
+        }
+
         if (textoAvisoNovoAluno != null) textoAvisoNovoAluno.text = "";
         inputNomeNovoAluno.text = "";
         filtroPesquisaAtual = "";
@@ -1197,17 +1467,48 @@ public class GerenciadorPerfis : MonoBehaviour
         FecharModalPerfis();
     }
 
-    public void AtualizarUICompleta()
+    /// <summary>
+    /// Se a sala escolhida para novos cadastros não existe mais (ex.: era uma sala padrão que não está no banco),
+    /// troca pela primeira sala disponível.
+    /// </summary>
+    private void GarantirSalaCadastroValida()
     {
+        List<string> salas = ObterListaSalas();
+        bool existe = false;
+        foreach (var s in salas)
+        {
+            if (string.Equals(s, salaSelecionadaCadastro, StringComparison.OrdinalIgnoreCase))
+            {
+                salaSelecionadaCadastro = s;
+                existe = true;
+                break;
+            }
+        }
+        if (!existe) salaSelecionadaCadastro = salas.Count > 0 ? salas[0] : "1º Ano A";
+        if (textoBtnSalaCadastro != null) textoBtnSalaCadastro.text = $"<b>Sala: {salaSelecionadaCadastro} ▼</b>";
+    }
+
+    /// <summary>
+    /// Atualiza só o crachá do aluno e a lista de alunos (sem mexer na tela de fases).
+    /// </summary>
+    public void AtualizarCrachaELista()
+    {
+        GarantirSalaCadastroValida();
         if (textoBadgeAluno != null)
         {
-            textoBadgeAluno.text = $"Aluno: <b>{PerfilAtivo}</b>";
+            string sala = ObterSalaDoAluno(PerfilAtivo);
+            textoBadgeAluno.text = $"Aluno: <b>{PerfilAtivo}</b>  |  <color=#01579B>Sala: <b>{sala}</b></color>";
         }
 
         if (modalPerfis != null && modalPerfis.activeSelf)
         {
             AtualizarListaCards();
         }
+    }
+
+    public void AtualizarUICompleta()
+    {
+        AtualizarCrachaELista();
 
         Action action = FindFirstObjectByType<Action>();
         if (action != null)
@@ -1251,6 +1552,13 @@ public class GerenciadorPerfis : MonoBehaviour
         List<string> filtrados = new List<string>();
         foreach (var p in perfis)
         {
+            if (salaFiltroAtual != "Todas as Salas")
+            {
+                string sAluno = ObterSalaDoAluno(p);
+                if (!string.Equals(sAluno.Trim(), salaFiltroAtual.Trim(), StringComparison.OrdinalIgnoreCase))
+                    continue;
+            }
+
             if (string.IsNullOrEmpty(filtroNormalizado))
             {
                 filtrados.Add(p);
@@ -1268,13 +1576,14 @@ public class GerenciadorPerfis : MonoBehaviour
         // Atualizar texto do contador
         if (textoContadorAlunos != null)
         {
+            string infoSala = (salaFiltroAtual == "Todas as Salas") ? "todas as salas" : $"Sala <b>{salaFiltroAtual}</b>";
             if (string.IsNullOrEmpty(filtroNormalizado))
             {
-                textoContadorAlunos.text = $"<b>{perfis.Count}</b> aluno(s) cadastrado(s)";
+                textoContadorAlunos.text = $"<b>{filtrados.Count}</b> aluno(s) em {infoSala}";
             }
             else
             {
-                textoContadorAlunos.text = $"Exibindo <b>{filtrados.Count}</b> de {perfis.Count} aluno(s)";
+                textoContadorAlunos.text = $"Exibindo <b>{filtrados.Count}</b> aluno(s) em {infoSala}";
             }
         }
 
@@ -1342,7 +1651,7 @@ public class GerenciadorPerfis : MonoBehaviour
         rtInfo.anchorMin = new Vector2(0f, 0f);
         rtInfo.anchorMax = new Vector2(1f, 1f);
         rtInfo.offsetMin = new Vector2(90f, 6f);
-        rtInfo.offsetMax = new Vector2(-350f, -6f);
+        rtInfo.offsetMax = new Vector2(-490f, -6f);
 
         int concluidas = ObterTotalFasesConcluidas(nome);
         string statusTag = isAtivo ? "   <color=#E65100><b>[JOGANDO AGORA]</b></color>" : "";
@@ -1363,7 +1672,8 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpNome.enableAutoSizing = true;
         tmpNome.fontSizeMin = 13f;
         tmpNome.fontSizeMax = 22f;
-        tmpNome.text = $"<b>{nome}</b>";
+        string salaAluno = ObterSalaDoAluno(nome);
+        tmpNome.text = $"<b>{nome}</b>   <color=#01579B><b>[Sala: {salaAluno}]</b></color>";
         tmpNome.alignment = TextAlignmentOptions.MidlineLeft;
         tmpNome.color = new Color(0.18f, 0.11f, 0.05f, 1f);
 
@@ -1386,6 +1696,46 @@ public class GerenciadorPerfis : MonoBehaviour
         tmpSub.alignment = TextAlignmentOptions.MidlineLeft;
         tmpSub.color = new Color(0.25f, 0.18f, 0.12f, 1f);
 
+        // Botão Mudar Sala do Aluno
+        GameObject btnMudar = new GameObject("BtnMudarSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        btnMudar.transform.SetParent(card.transform, false);
+        RectTransform rtMudar = btnMudar.GetComponent<RectTransform>();
+        rtMudar.anchorMin = new Vector2(1f, 0.5f);
+        rtMudar.anchorMax = new Vector2(1f, 0.5f);
+        rtMudar.pivot = new Vector2(1f, 0.5f);
+        rtMudar.anchoredPosition = new Vector2(-335f, 0f);
+        rtMudar.sizeDelta = new Vector2(155f, 48f);
+
+        Image imgMudar = btnMudar.GetComponent<Image>();
+        imgMudar.color = new Color(0.15f, 0.42f, 0.75f, 0.95f);
+        if (spriteBtnContinuar != null)
+        {
+            imgMudar.sprite = spriteBtnContinuar;
+            imgMudar.type = Image.Type.Sliced;
+            imgMudar.color = Color.white;
+        }
+
+        string capturadoNome = nome;
+        Button bMudar = btnMudar.GetComponent<Button>();
+        bMudar.onClick.AddListener(() =>
+        {
+            AbrirModalSeletorSala(ModoSeletorSala.MudarSalaAluno, capturadoNome);
+        });
+
+        GameObject txtMudar = new GameObject("TextoMudar", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        txtMudar.transform.SetParent(btnMudar.transform, false);
+        RectTransform rtTxtMudar = txtMudar.GetComponent<RectTransform>();
+        rtTxtMudar.anchorMin = Vector2.zero;
+        rtTxtMudar.anchorMax = Vector2.one;
+        rtTxtMudar.sizeDelta = Vector2.zero;
+        TextMeshProUGUI tmpMudar = txtMudar.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpMudar.font = fontJogo;
+        tmpMudar.text = "MUDAR SALA";
+        tmpMudar.fontSize = 17;
+        tmpMudar.fontStyle = FontStyles.Bold;
+        tmpMudar.alignment = TextAlignmentOptions.Center;
+        tmpMudar.color = Color.white;
+
         // Botao Selecionar / Jogar (Com borda slim e texto nitido)
         GameObject btnJogar = new GameObject("BtnJogar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
         btnJogar.transform.SetParent(card.transform, false);
@@ -1393,8 +1743,8 @@ public class GerenciadorPerfis : MonoBehaviour
         rtJogar.anchorMin = new Vector2(1f, 0.5f);
         rtJogar.anchorMax = new Vector2(1f, 0.5f);
         rtJogar.pivot = new Vector2(1f, 0.5f);
-        rtJogar.anchoredPosition = new Vector2(-160f, 0f);
-        rtJogar.sizeDelta = new Vector2(180f, 52f);
+        rtJogar.anchoredPosition = new Vector2(-165f, 0f);
+        rtJogar.sizeDelta = new Vector2(160f, 52f);
 
         Image imgJogar = btnJogar.GetComponent<Image>();
         Sprite sprBotaoAcao = isAtivo ? (spriteBtnContinuar != null ? spriteBtnContinuar : spriteBtnJogar) : spriteBtnJogar;
@@ -1463,6 +1813,8 @@ public class GerenciadorPerfis : MonoBehaviour
             {
                 alunoEmConfirmacaoExclusao = "";
                 ExcluirPerfil(nome);
+                // Exclui também no servidor; senão o aluno "volta" na próxima sincronização
+                if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.ExcluirAlunoNuvem(nome);
             }
             else
             {
@@ -1817,5 +2169,416 @@ public class GerenciadorPerfis : MonoBehaviour
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = Color.white;
         tmp.raycastTarget = false;
+    }
+
+    // =========================================================
+    // MODAL DE SELEÇÃO E GERENCIAMENTO DE SALAS
+    // =========================================================
+    private void ConstruirModalSeletorSala(Transform pai)
+    {
+        modalSeletorSala = new GameObject("ModalSeletorSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        modalSeletorSala.transform.SetParent(pai, false);
+        RectTransform rtModal = modalSeletorSala.GetComponent<RectTransform>();
+        rtModal.anchorMin = Vector2.zero;
+        rtModal.anchorMax = Vector2.one;
+        rtModal.offsetMin = Vector2.zero;
+        rtModal.offsetMax = Vector2.zero;
+
+        Image imgOverlay = modalSeletorSala.GetComponent<Image>();
+        imgOverlay.color = new Color(0.06f, 0.04f, 0.03f, 0.88f);
+        imgOverlay.raycastTarget = true;
+
+        GameObject janela = new GameObject("JanelaSeletorSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        janela.transform.SetParent(modalSeletorSala.transform, false);
+        RectTransform rtJanela = janela.GetComponent<RectTransform>();
+        rtJanela.anchorMin = new Vector2(0.5f, 0.5f);
+        rtJanela.anchorMax = new Vector2(0.5f, 0.5f);
+        rtJanela.pivot = new Vector2(0.5f, 0.5f);
+        rtJanela.anchoredPosition = Vector2.zero;
+        rtJanela.sizeDelta = new Vector2(980f, 640f);
+
+        Image imgJanela = janela.GetComponent<Image>();
+        if (spritePainelPergaminho != null)
+        {
+            imgJanela.sprite = spritePainelPergaminho;
+            imgJanela.type = Image.Type.Sliced;
+            imgJanela.color = Color.white;
+        }
+        else
+        {
+            imgJanela.color = new Color(1f, 0.96f, 0.85f, 1f);
+        }
+
+        // Título e Subtítulo
+        GameObject goTit = new GameObject("Titulo", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTit.transform.SetParent(janela.transform, false);
+        RectTransform rtTit = goTit.GetComponent<RectTransform>();
+        rtTit.anchorMin = new Vector2(0.5f, 1f);
+        rtTit.anchorMax = new Vector2(0.5f, 1f);
+        rtTit.pivot = new Vector2(0.5f, 1f);
+        rtTit.anchoredPosition = new Vector2(0f, -32f);
+        rtTit.sizeDelta = new Vector2(900f, 85f);
+
+        textoTituloSeletorSala = goTit.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) textoTituloSeletorSala.font = fontJogo;
+        textoTituloSeletorSala.text = "<size=30><b>SELECIONE A SALA / TURMA</b></size>\n<size=18><color=#5D4037>Escolha a sala escolar desejada ou adicione uma nova</color></size>";
+        textoTituloSeletorSala.alignment = TextAlignmentOptions.Center;
+        textoTituloSeletorSala.color = new Color(0.2f, 0.12f, 0.05f, 1f);
+
+        // Botão Fechar X
+        GameObject goFechar = new GameObject("BtnFechar", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goFechar.transform.SetParent(janela.transform, false);
+        RectTransform rtFechar = goFechar.GetComponent<RectTransform>();
+        rtFechar.anchorMin = new Vector2(1f, 1f);
+        rtFechar.anchorMax = new Vector2(1f, 1f);
+        rtFechar.pivot = new Vector2(1f, 1f);
+        rtFechar.anchoredPosition = new Vector2(-36f, -36f);
+        rtFechar.sizeDelta = new Vector2(46f, 46f);
+
+        Image imgFechar = goFechar.GetComponent<Image>();
+        if (spriteXFechar != null) imgFechar.sprite = spriteXFechar;
+        else imgFechar.color = new Color(0.85f, 0.25f, 0.2f, 1f);
+
+        Button btnFechar = goFechar.GetComponent<Button>();
+        btnFechar.onClick.AddListener(FecharModalSeletorSala);
+
+        // ScrollView de Salas
+        GameObject scrollObj = new GameObject("ScrollSalas", typeof(RectTransform), typeof(CanvasRenderer), typeof(ScrollRect));
+        scrollObj.transform.SetParent(janela.transform, false);
+        RectTransform rtScroll = scrollObj.GetComponent<RectTransform>();
+        rtScroll.anchorMin = new Vector2(0f, 0f);
+        rtScroll.anchorMax = new Vector2(1f, 1f);
+        rtScroll.offsetMin = new Vector2(45f, 95f);
+        rtScroll.offsetMax = new Vector2(-45f, -125f);
+
+        ScrollRect sr = scrollObj.GetComponent<ScrollRect>();
+        sr.horizontal = false;
+        sr.vertical = true;
+        sr.scrollSensitivity = 35f;
+
+        GameObject viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+        viewport.transform.SetParent(scrollObj.transform, false);
+        RectTransform rtViewport = viewport.GetComponent<RectTransform>();
+        rtViewport.anchorMin = Vector2.zero;
+        rtViewport.anchorMax = Vector2.one;
+        rtViewport.sizeDelta = Vector2.zero;
+        sr.viewport = rtViewport;
+
+        GameObject content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+        content.transform.SetParent(viewport.transform, false);
+        RectTransform rtContent = content.GetComponent<RectTransform>();
+        rtContent.anchorMin = new Vector2(0f, 1f);
+        rtContent.anchorMax = new Vector2(1f, 1f);
+        rtContent.pivot = new Vector2(0.5f, 1f);
+        rtContent.sizeDelta = new Vector2(0f, 0f);
+
+        VerticalLayoutGroup vlg = content.GetComponent<VerticalLayoutGroup>();
+        vlg.childForceExpandHeight = false;
+        vlg.childForceExpandWidth = true;
+        vlg.childControlHeight = false;
+        vlg.childControlWidth = true;
+        vlg.spacing = 8f;
+        vlg.padding = new RectOffset(4, 4, 4, 4);
+
+        ContentSizeFitter csf = content.GetComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        sr.content = rtContent;
+
+        containerCardsSalas = content.transform;
+
+        // Rodapé com criação de nova sala
+        GameObject rodape = new GameObject("RodapeNovaSala", typeof(RectTransform));
+        rodape.transform.SetParent(janela.transform, false);
+        RectTransform rtRodape = rodape.GetComponent<RectTransform>();
+        rtRodape.anchorMin = new Vector2(0.5f, 0f);
+        rtRodape.anchorMax = new Vector2(0.5f, 0f);
+        rtRodape.pivot = new Vector2(0.5f, 0f);
+        rtRodape.anchoredPosition = new Vector2(0f, 24f);
+        rtRodape.sizeDelta = new Vector2(890f, 56f);
+
+        // Input de Nova Sala
+        GameObject goInput = new GameObject("InputNovaSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
+        goInput.transform.SetParent(rodape.transform, false);
+        RectTransform rtInput = goInput.GetComponent<RectTransform>();
+        rtInput.anchorMin = new Vector2(0f, 0.5f);
+        rtInput.anchorMax = new Vector2(0f, 0.5f);
+        rtInput.pivot = new Vector2(0f, 0.5f);
+        rtInput.anchoredPosition = new Vector2(0f, 0f);
+        rtInput.sizeDelta = new Vector2(580f, 50f);
+
+        Image imgInput = goInput.GetComponent<Image>();
+        if (spriteBarraPesquisa != null)
+        {
+            imgInput.sprite = spriteBarraPesquisa;
+            imgInput.type = Image.Type.Sliced;
+            imgInput.color = Color.white;
+        }
+        else
+        {
+            imgInput.color = Color.white;
+        }
+
+        inputNovaSala = goInput.GetComponent<TMP_InputField>();
+
+        GameObject textArea = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
+        textArea.transform.SetParent(goInput.transform, false);
+        RectTransform rtArea = textArea.GetComponent<RectTransform>();
+        rtArea.anchorMin = Vector2.zero;
+        rtArea.anchorMax = Vector2.one;
+        rtArea.offsetMin = new Vector2(16f, 4f);
+        rtArea.offsetMax = new Vector2(-16f, -4f);
+
+        GameObject goPh = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goPh.transform.SetParent(textArea.transform, false);
+        RectTransform rtPh = goPh.GetComponent<RectTransform>();
+        rtPh.anchorMin = Vector2.zero;
+        rtPh.anchorMax = Vector2.one;
+        rtPh.offsetMin = Vector2.zero;
+        rtPh.offsetMax = Vector2.zero;
+        TextMeshProUGUI tmpPh = goPh.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpPh.font = fontJogo;
+        tmpPh.text = "Cadastrar nova sala (ex: 4º Ano B)...";
+        tmpPh.fontSize = 20;
+        tmpPh.fontStyle = FontStyles.Italic;
+        tmpPh.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpPh.color = new Color(0.55f, 0.45f, 0.35f, 0.75f);
+
+        GameObject goTxt = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxt.transform.SetParent(textArea.transform, false);
+        RectTransform rtT = goTxt.GetComponent<RectTransform>();
+        rtT.anchorMin = Vector2.zero;
+        rtT.anchorMax = Vector2.one;
+        rtT.offsetMin = Vector2.zero;
+        rtT.offsetMax = Vector2.zero;
+        TextMeshProUGUI tmpT = goTxt.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpT.font = fontJogo;
+        tmpT.fontSize = 22;
+        tmpT.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpT.color = new Color(0.18f, 0.11f, 0.04f, 1f);
+
+        inputNovaSala.textViewport = rtArea;
+        inputNovaSala.textComponent = tmpT;
+        inputNovaSala.placeholder = tmpPh;
+        inputNovaSala.characterLimit = 30;
+
+        // Botão Adicionar Sala
+        GameObject goBtnAdd = new GameObject("BtnAddSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goBtnAdd.transform.SetParent(rodape.transform, false);
+        RectTransform rtBtnAdd = goBtnAdd.GetComponent<RectTransform>();
+        rtBtnAdd.anchorMin = new Vector2(1f, 0.5f);
+        rtBtnAdd.anchorMax = new Vector2(1f, 0.5f);
+        rtBtnAdd.pivot = new Vector2(1f, 0.5f);
+        rtBtnAdd.anchoredPosition = new Vector2(0f, 0f);
+        rtBtnAdd.sizeDelta = new Vector2(290f, 50f);
+
+        Image imgAdd = goBtnAdd.GetComponent<Image>();
+        imgAdd.color = new Color(0.18f, 0.72f, 0.35f, 1f);
+        if (spriteBtnJogar != null)
+        {
+            imgAdd.sprite = spriteBtnJogar;
+            imgAdd.type = Image.Type.Sliced;
+            imgAdd.color = Color.white;
+        }
+
+        Button btnAdd = goBtnAdd.GetComponent<Button>();
+        btnAdd.onClick.AddListener(OnClickAdicionarNovaSala);
+
+        GameObject goTxtAdd = new GameObject("TextoAdd", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxtAdd.transform.SetParent(goBtnAdd.transform, false);
+        RectTransform rtTxtAdd = goTxtAdd.GetComponent<RectTransform>();
+        rtTxtAdd.anchorMin = Vector2.zero;
+        rtTxtAdd.anchorMax = Vector2.one;
+        rtTxtAdd.sizeDelta = Vector2.zero;
+        TextMeshProUGUI tmpAdd = goTxtAdd.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpAdd.font = fontJogo;
+        tmpAdd.text = "+ CRIAR SALA";
+        tmpAdd.fontSize = 20;
+        tmpAdd.fontStyle = FontStyles.Bold;
+        tmpAdd.alignment = TextAlignmentOptions.Center;
+        tmpAdd.color = Color.white;
+
+        modalSeletorSala.SetActive(false);
+    }
+
+    public void AbrirModalSeletorSala(ModoSeletorSala modo, string aluno = "")
+    {
+        modoSeletorAtual = modo;
+        alunoAlvoMudarSala = aluno;
+
+        if (modalSeletorSala == null)
+        {
+            Transform root = modalPerfis != null ? modalPerfis.transform.Find("JanelaDialogo") : transform;
+            ConstruirModalSeletorSala(root != null ? root : transform);
+        }
+
+        if (textoTituloSeletorSala != null)
+        {
+            if (modo == ModoSeletorSala.FiltrarLista)
+                textoTituloSeletorSala.text = "<size=30><b>FILTRAR ALUNOS POR SALA</b></size>\n<size=18><color=#5D4037>Selecione a turma para visualizar apenas seus estudantes</color></size>";
+            else if (modo == ModoSeletorSala.DefinirCadastro)
+                textoTituloSeletorSala.text = "<size=30><b>SALA DO NOVO ALUNO</b></size>\n<size=18><color=#5D4037>Escolha em qual turma o novo estudante será matriculado</color></size>";
+            else
+                textoTituloSeletorSala.text = $"<size=28><b>ALTERAR SALA DE {aluno.ToUpper()}</b></size>\n<size=17><color=#5D4037>Selecione a nova turma escolar para este estudante</color></size>";
+        }
+
+        if (inputNovaSala != null) inputNovaSala.text = "";
+        modalSeletorSala.SetActive(true);
+        modalSeletorSala.transform.SetAsLastSibling();
+        AtualizarCardsSalas();
+    }
+
+    public void FecharModalSeletorSala()
+    {
+        if (modalSeletorSala != null)
+        {
+            modalSeletorSala.SetActive(false);
+        }
+    }
+
+    private void AtualizarCardsSalas()
+    {
+        if (containerCardsSalas == null) return;
+
+        for (int i = containerCardsSalas.childCount - 1; i >= 0; i--)
+        {
+            Destroy(containerCardsSalas.GetChild(i).gameObject);
+        }
+
+        List<string> salas = ObterListaSalas();
+        List<string> todosAlunos = ObterListaPerfis();
+
+        // Se estiver em modo de filtro, adiciona a opção "Todas as Salas"
+        if (modoSeletorAtual == ModoSeletorSala.FiltrarLista)
+        {
+            CriarItemCardSala("Todas as Salas", todosAlunos.Count, salaFiltroAtual == "Todas as Salas");
+        }
+
+        foreach (var s in salas)
+        {
+            int qtd = todosAlunos.FindAll(a => ObterSalaDoAluno(a) == s).Count;
+            bool ativa = false;
+            if (modoSeletorAtual == ModoSeletorSala.FiltrarLista) ativa = (salaFiltroAtual == s);
+            else if (modoSeletorAtual == ModoSeletorSala.DefinirCadastro) ativa = (salaSelecionadaCadastro == s);
+            else if (modoSeletorAtual == ModoSeletorSala.MudarSalaAluno) ativa = (ObterSalaDoAluno(alunoAlvoMudarSala) == s);
+
+            CriarItemCardSala(s, qtd, ativa);
+        }
+    }
+
+    private void CriarItemCardSala(string nomeSala, int totalAlunos, bool isAtiva)
+    {
+        GameObject item = new GameObject($"Sala_{nomeSala}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        item.transform.SetParent(containerCardsSalas, false);
+        RectTransform rt = item.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(880f, 62f);
+
+        Image img = item.GetComponent<Image>();
+        img.color = isAtiva ? new Color(0.88f, 0.94f, 1f, 1f) : new Color(0.96f, 0.93f, 0.86f, 1f);
+        if (spriteCardFundo != null)
+        {
+            img.sprite = isAtiva && spriteCardAtivo != null ? spriteCardAtivo : spriteCardFundo;
+            img.type = Image.Type.Sliced;
+            img.color = Color.white;
+        }
+
+        // Texto Nome e Quantidade
+        GameObject goTxt = new GameObject("InfoSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxt.transform.SetParent(item.transform, false);
+        RectTransform rtTxt = goTxt.GetComponent<RectTransform>();
+        rtTxt.anchorMin = Vector2.zero;
+        rtTxt.anchorMax = Vector2.one;
+        rtTxt.offsetMin = new Vector2(24f, 4f);
+        rtTxt.offsetMax = new Vector2(-190f, -4f);
+
+        TextMeshProUGUI tmp = goTxt.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmp.font = fontJogo;
+        string tagAtiva = isAtiva ? " <color=#0277BD>[SELECIONADA]</color>" : "";
+        tmp.text = $"<size=22><b>{nomeSala}</b></size>{tagAtiva}\n<size=15><color=#5D4037>{totalAlunos} aluno(s) matriculado(s)</color></size>";
+        tmp.alignment = TextAlignmentOptions.MidlineLeft;
+        tmp.color = new Color(0.18f, 0.11f, 0.05f, 1f);
+
+        // Botão Selecionar
+        GameObject goBtn = new GameObject("BtnEscolherSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+        goBtn.transform.SetParent(item.transform, false);
+        RectTransform rtBtn = goBtn.GetComponent<RectTransform>();
+        rtBtn.anchorMin = new Vector2(1f, 0.5f);
+        rtBtn.anchorMax = new Vector2(1f, 0.5f);
+        rtBtn.pivot = new Vector2(1f, 0.5f);
+        rtBtn.anchoredPosition = new Vector2(-14f, 0f);
+        rtBtn.sizeDelta = new Vector2(160f, 44f);
+
+        Image imgBtn = goBtn.GetComponent<Image>();
+        imgBtn.color = new Color(0.18f, 0.72f, 0.35f, 1f);
+        if (spriteBtnJogar != null)
+        {
+            imgBtn.sprite = spriteBtnJogar;
+            imgBtn.type = Image.Type.Sliced;
+            imgBtn.color = Color.white;
+        }
+
+        string capturada = nomeSala;
+        Button btn = goBtn.GetComponent<Button>();
+        btn.onClick.AddListener(() =>
+        {
+            SelecionarSalaDefinitiva(capturada);
+        });
+
+        GameObject goTxtBtn = new GameObject("TextoBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTxtBtn.transform.SetParent(goBtn.transform, false);
+        RectTransform rtTB = goTxtBtn.GetComponent<RectTransform>();
+        rtTB.anchorMin = Vector2.zero;
+        rtTB.anchorMax = Vector2.one;
+        rtTB.sizeDelta = Vector2.zero;
+        TextMeshProUGUI tmpB = goTxtBtn.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpB.font = fontJogo;
+        tmpB.text = isAtiva ? "ATUAL" : "ESCOLHER";
+        tmpB.fontSize = 18;
+        tmpB.fontStyle = FontStyles.Bold;
+        tmpB.alignment = TextAlignmentOptions.Center;
+        tmpB.color = Color.white;
+    }
+
+    private void SelecionarSalaDefinitiva(string sala)
+    {
+        if (modoSeletorAtual == ModoSeletorSala.FiltrarLista)
+        {
+            salaFiltroAtual = sala;
+            if (sala != "Todas as Salas")
+            {
+                salaSelecionadaCadastro = sala;
+                if (textoBtnSalaCadastro != null) textoBtnSalaCadastro.text = $"<b>Sala: {salaSelecionadaCadastro} ▼</b>";
+            }
+            if (textoBtnFiltroSala != null) textoBtnFiltroSala.text = $"<b>SALA: {salaFiltroAtual} ▼</b>";
+            FecharModalSeletorSala();
+            AtualizarListaCards();
+        }
+        else if (modoSeletorAtual == ModoSeletorSala.DefinirCadastro)
+        {
+            salaSelecionadaCadastro = sala;
+            if (textoBtnSalaCadastro != null) textoBtnSalaCadastro.text = $"<b>Sala: {salaSelecionadaCadastro} ▼</b>";
+            FecharModalSeletorSala();
+        }
+        else if (modoSeletorAtual == ModoSeletorSala.MudarSalaAluno)
+        {
+            if (!string.IsNullOrEmpty(alunoAlvoMudarSala))
+            {
+                DefinirSalaDoAluno(alunoAlvoMudarSala, sala);
+            }
+            FecharModalSeletorSala();
+            AtualizarUICompleta();
+        }
+    }
+
+    private void OnClickAdicionarNovaSala()
+    {
+        if (inputNovaSala == null) return;
+        string nome = inputNovaSala.text.Trim();
+        if (string.IsNullOrEmpty(nome) || nome.Length < 2) return;
+
+        CadastrarNovaSala(nome);
+        // Envia a sala nova para o servidor (aparece no painel mesmo antes de ter alunos)
+        if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.CadastrarSalaNuvem(nome);
+        inputNovaSala.text = "";
+        AtualizarCardsSalas();
     }
 }

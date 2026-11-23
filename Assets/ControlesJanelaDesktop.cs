@@ -100,7 +100,7 @@ public class ControlesJanelaDesktop : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Escape))
+        if (EscPressionadoNesteFrame())
         {
             if (modalConfirmarSaida != null && modalConfirmarSaida.activeSelf)
             {
@@ -111,6 +111,22 @@ public class ControlesJanelaDesktop : MonoBehaviour
                 AbrirConfirmacaoSaida();
             }
         }
+    }
+
+    /// <summary>
+    /// Lê a tecla Esc pelo pacote Input System (o projeto usa só ele em Active Input Handling).
+    /// A classe antiga UnityEngine.Input lança InvalidOperationException nessa configuração.
+    /// </summary>
+    private static bool EscPressionadoNesteFrame()
+    {
+#if ENABLE_INPUT_SYSTEM
+        UnityEngine.InputSystem.Keyboard teclado = UnityEngine.InputSystem.Keyboard.current;
+        return teclado != null && teclado.escapeKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+        return Input.GetKeyDown(KeyCode.Escape);
+#else
+        return false;
+#endif
     }
 
     private void CriarBotaoMinimizar()

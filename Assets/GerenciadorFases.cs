@@ -454,7 +454,10 @@ public class GerenciadorFases : MonoBehaviour
         if (gameManager != null) gameManager.IniciarFaseEspecifica(numeroFase, nivelAtual, isMath);
     }
 
-    public void MarcarFaseComoCompleta()
+    /// <param name="vidasRestantes">Vidas que sobraram ao concluir a fase (define estrelas e erros enviados ao servidor).</param>
+    /// <param name="vidasMaximas">Vidas com que a fase começou.</param>
+    /// <param name="tempoSegundos">Tempo que o aluno levou na fase.</param>
+    public void MarcarFaseComoCompleta(int vidasRestantes = 2, int vidasMaximas = 2, int tempoSegundos = 0)
     {
         if (faseAtualJogando >= 0)
         {
@@ -474,7 +477,10 @@ public class GerenciadorFases : MonoBehaviour
                         GerenciadorPerfis.PerfilAtivo,
                         GetPrefixoSave(),
                         nivelAtual,
-                        faseAtualJogando + 1
+                        faseAtualJogando + 1,
+                        vidasRestantes,
+                        vidasMaximas,
+                        tempoSegundos
                     );
                 }
             }
