@@ -400,7 +400,18 @@ public class GerenciadorPerfis : MonoBehaviour
 
     public static string ObterSalaDoAluno(string nomeAluno)
     {
-        if (string.IsNullOrEmpty(nomeAluno)) return ObterSalaPadrao();
+        string conhecida = ObterSalaConhecidaDoAluno(nomeAluno);
+        if (!string.IsNullOrEmpty(conhecida)) return conhecida;
+
+        // Aluno sem sala conhecida: mostra a primeira sala disponível, mas NÃO grava
+        // (gravar aqui criava salas no PC que não existem no banco)
+        return ObterSalaPadrao();
+    }
+
+    /// <summary>Sala do aluno no servidor ou salva neste PC; "" se não houver (sem usar a sala padrão).</summary>
+    private static string ObterSalaConhecidaDoAluno(string nomeAluno)
+    {
+        if (string.IsNullOrEmpty(nomeAluno)) return "";
 
         ServicoNuvem sn = ServicoNuvem.Instancia;
         string turmaNuvem = sn != null ? sn.ObterTurmaDoAluno(nomeAluno) : "";
@@ -409,12 +420,16 @@ public class GerenciadorPerfis : MonoBehaviour
         string salva = PlayerPrefs.GetString($"Aluno_Turma_{nomeAluno}", "");
         if (!string.IsNullOrEmpty(salva)) return salva;
 
-        string salvaSanit = PlayerPrefs.GetString($"Aluno_Turma_{SanitizarNome(nomeAluno)}", "");
-        if (!string.IsNullOrEmpty(salvaSanit)) return salvaSanit;
+        return PlayerPrefs.GetString($"Aluno_Turma_{SanitizarNome(nomeAluno)}", "");
+    }
 
-        // Aluno sem sala conhecida: mostra a primeira sala disponível, mas NÃO grava
-        // (gravar aqui criava salas no PC que não existem no banco)
-        return ObterSalaPadrao();
+    /// <summary>
+    /// true se o aluno que está jogando é de uma sala do 1º ou 2º ano: as fases usam o conteúdo de
+    /// alfabetização (ConteudoAlfabetizacao). Sala desconhecida ou do 3º ano em diante: conteúdo original.
+    /// </summary>
+    public static bool AlunoAtivoEmAlfabetizacao()
+    {
+        return ConteudoAlfabetizacao.SalaDeAlfabetizacao(ObterSalaConhecidaDoAluno(PerfilAtivo));
     }
 
     /// <param name="enviarParaNuvem">false quando o aluno acabou de ser criado (o cadastro na nuvem já leva a sala).</param>

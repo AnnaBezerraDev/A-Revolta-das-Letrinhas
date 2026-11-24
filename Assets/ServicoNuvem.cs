@@ -1673,8 +1673,8 @@ public class ServicoNuvem : MonoBehaviour
 
     // Versão do código DESTE build. Aumente a cada novo build publicado (e use o mesmo número no servidor ao enviar o patch).
     // O texto de versão do Lobby também lê daqui.
-    public const int VersaoCodigoDoBuild = 106;
-    public const string VersaoNomeDoBuild = "1.0.6";
+    public const int VersaoCodigoDoBuild = 107;
+    public const string VersaoNomeDoBuild = "1.0.7";
     public int versaoLocalCodigo = VersaoCodigoDoBuild;
     public string versaoLocalNome = VersaoNomeDoBuild;
     public bool patchProntoParaAplicar { get; private set; } = false;

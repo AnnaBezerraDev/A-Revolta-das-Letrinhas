@@ -83,6 +83,10 @@ public class GameManager : MonoBehaviour
         tempoUltimoClique = Time.time;
     }
     private bool jogandoMatematica = false;
+
+    // Aluno do 1º ou 2º ano: palavras e continhas mais fáceis (ver ConteudoAlfabetizacao)
+    private bool conteudoAlfabetizacao = false;
+    public bool ConteudoAlfabetizacaoAtivo => conteudoAlfabetizacao;
     private string respostaCorreta;
     private string palavraCompleta;
     private bool podeInteragir = true;
@@ -128,6 +132,7 @@ public class GameManager : MonoBehaviour
         nivelAtualID = nivelDificuldade;
         faseAtualID = numeroFase;
         jogandoMatematica = isMath;
+        conteudoAlfabetizacao = GerenciadorPerfis.AlunoAtivoEmAlfabetizacao();
 
         if (isMath)
         {
@@ -183,6 +188,10 @@ public class GameManager : MonoBehaviour
         if (isMath)
         {
             ConfigurarFaseMatematica(numeroFase, nivelDificuldade);
+        }
+        else if (conteudoAlfabetizacao)
+        {
+            ConfigurarFaseVogalAlfabetizacao(numeroFase, nivelDificuldade);
         }
         else
         {
@@ -436,7 +445,14 @@ public class GameManager : MonoBehaviour
         // Semente dinâmica para que a cada entrada a continha tenha valores novos
         Random.InitState((int)(System.DateTime.Now.Ticks ^ (numeroFase * 37 + nivelDificuldade * 1000)));
 
-        if (nivelDificuldade == 0)
+        if (conteudoAlfabetizacao)
+        {
+            // 1º e 2º ano: somas só com números de 1 algarismo
+            ConteudoAlfabetizacao.SortearSoma(nivelDificuldade, out int a, out int b);
+            pergunta = $"{a} + {b} = ?"; correta = a + b;
+            passoAPasso = ConteudoAlfabetizacao.PassoAPassoSoma(a, b);
+        }
+        else if (nivelDificuldade == 0)
         {
             if (numeroFase < 10)
             {
@@ -564,13 +580,22 @@ public class GameManager : MonoBehaviour
             uiAtual.balaoTexto.text = pergunta;
         }
 
-        List<string> opcoes = new List<string> { respostaCorreta };
-        int errada1 = correta + Random.Range(1, 10);
-        int errada2 = correta - Random.Range(1, 10);
-        if (errada2 == correta || errada2 == errada1) errada2 = correta + 15;
+        List<string> opcoes;
+        if (conteudoAlfabetizacao)
+        {
+            // Alternativas próximas da resposta e nunca negativas
+            opcoes = ConteudoAlfabetizacao.OpcoesDaSoma(correta, uiAtual.botoes.Length);
+        }
+        else
+        {
+            opcoes = new List<string> { respostaCorreta };
+            int errada1 = correta + Random.Range(1, 10);
+            int errada2 = correta - Random.Range(1, 10);
+            if (errada2 == correta || errada2 == errada1) errada2 = correta + 15;
 
-        opcoes.Add(errada1.ToString());
-        opcoes.Add(errada2.ToString());
+            opcoes.Add(errada1.ToString());
+            opcoes.Add(errada2.ToString());
+        }
 
         opcoes = EmbaralharLista(opcoes);
 
@@ -578,6 +603,34 @@ public class GameManager : MonoBehaviour
         {
             if (i < opcoes.Count && uiAtual.botoes[i] != null)
                 uiAtual.botoes[i].DefinirLetra(opcoes[i]);
+        }
+    }
+
+    // 1º e 2º ano (Fácil, Médio e Difícil): palavra pequena com uma vogal faltando; as cartas são vogais.
+    void ConfigurarFaseVogalAlfabetizacao(int numeroFase, int nivelDificuldade)
+    {
+        int qtdCartas = (uiAtual.botoes != null) ? uiAtual.botoes.Length : 3;
+        ConteudoAlfabetizacao.DesafioVogal desafio = ConteudoAlfabetizacao.SortearDesafioVogal(nivelDificuldade, numeroFase, qtdCartas);
+
+        palavraCompleta = desafio.palavra;
+        respostaCorreta = desafio.vogal;
+        if (uiAtual.balaoTexto != null)
+        {
+            if (nivelDificuldade == 2)
+            {
+                // Mesmo formato que o balão do Difícil usa nas frases (centralizado e com letra grande)
+                uiAtual.balaoTexto.enableAutoSizing = true;
+                uiAtual.balaoTexto.fontSizeMin = 36;
+                uiAtual.balaoTexto.fontSizeMax = 68;
+                uiAtual.balaoTexto.margin = new Vector4(15, 10, 15, 10);
+                uiAtual.balaoTexto.alignment = TextAlignmentOptions.Center;
+            }
+            uiAtual.balaoTexto.text = desafio.comLacuna;
+        }
+
+        for (int i = 0; i < uiAtual.botoes.Length; i++)
+        {
+            if (i < desafio.opcoes.Count && uiAtual.botoes[i] != null) uiAtual.botoes[i].DefinirLetra(desafio.opcoes[i]);
         }
     }
 
@@ -804,7 +857,7 @@ public class GameManager : MonoBehaviour
 
         if (entradaNormalizada == corretaNormalizada && !string.IsNullOrEmpty(corretaNormalizada))
         {
-            if (!jogandoMatematica && nivelAtualID == 2 && etapaDificilAtual == 0)
+            if (!jogandoMatematica && nivelAtualID == 2 && !conteudoAlfabetizacao && etapaDificilAtual == 0)
             {
                 if (sfxSource != null && somAcerto != null) sfxSource.PlayOneShot(somAcerto);
                 etapaDificilAtual = 1;
@@ -862,7 +915,7 @@ public class GameManager : MonoBehaviour
             if (uiAtual.balaoTexto != null)
             {
                 if (jogandoMatematica) uiAtual.balaoTexto.text = uiAtual.balaoTexto.text.Replace("?", corretaNormalizada);
-                else if (nivelAtualID == 2)
+                else if (nivelAtualID == 2 && !conteudoAlfabetizacao)
                 {
                     uiAtual.balaoTexto.enableAutoSizing = true;
                     uiAtual.balaoTexto.fontSizeMin = 36;
@@ -1060,7 +1113,7 @@ public class GameManager : MonoBehaviour
         }
         else
         {
-            if (nivelAtualID == 2)
+            if (nivelAtualID == 2 && !conteudoAlfabetizacao)
             {
                 if (etapaDificilAtual == 0)
                 {

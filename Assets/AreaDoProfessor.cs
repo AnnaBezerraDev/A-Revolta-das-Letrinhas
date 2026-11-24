@@ -2400,7 +2400,7 @@ public class AreaDoProfessor : MonoBehaviour
         }
         else
         {
-            if (nivelID == 2)
+            if (nivelID == 2 && !gm.ConteudoAlfabetizacaoAtivo)
             {
                 var frase = gm.FraseDificilAtual;
                 sb.AppendLine("<b>[DESAFIO GRAMATICAL E ORTOGRÁFICO]</b>");
@@ -2418,7 +2418,9 @@ public class AreaDoProfessor : MonoBehaviour
                 sb.AppendLine($"- <b>Letra(s) Oculta(s):</b> <size=24><color=#B71C1C>{gm.RespostaCorreta}</color></size>");
                 sb.AppendLine();
                 sb.AppendLine("<b>[REGRA ORTOGRÁFICA]</b>");
-                if (gm.PalavraCompleta.Contains("SS"))
+                if (gm.ConteudoAlfabetizacaoAtivo)
+                    sb.AppendLine("- Conteúdo de 1º e 2º ano: completar a <b>vogal</b> (A, E, I, O, U) que falta na palavra.");
+                else if (gm.PalavraCompleta.Contains("SS"))
                     sb.AppendLine("- Usa-se <b>SS</b> entre vogais para reproduzir o som de /s/. Nunca se inicia palavra com SS.");
                 else if (gm.PalavraCompleta.Contains("CH"))
                     sb.AppendLine("- O dígrafo <b>CH</b> possui o mesmo fonema que a letra X em diversas posições.");
