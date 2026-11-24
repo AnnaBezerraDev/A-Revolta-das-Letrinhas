@@ -87,6 +87,87 @@ public class GameManager : MonoBehaviour
     // Aluno do 1º ou 2º ano: palavras e continhas mais fáceis (ver ConteudoAlfabetizacao)
     private bool conteudoAlfabetizacao = false;
     public bool ConteudoAlfabetizacaoAtivo => conteudoAlfabetizacao;
+
+    // true quando o professor usou "Auto-completar" nesta fase
+    private bool faseResolvidaPeloProfessor = false;
+
+    // Ano escolar do aluno (lido do nome da sala; 0 = desconhecido)
+    private int anoEscolar = 0;
+    public int AnoEscolar => anoEscolar;
+
+    // Várias perguntas por fase (contra o "chute"): as 2 vidas valem para a fase inteira
+    private int perguntaAtual = 1;
+    private int totalPerguntas = 1;
+    public int PerguntaAtual => perguntaAtual;
+    public int TotalPerguntas => totalPerguntas;
+
+    // Tipo da pergunta atual
+    private bool perguntaComTexto = false;       // problema escrito: no acerto mostra "Resposta: X"
+    private bool perguntaInterpretacao = false;  // 5º ano: texto + pergunta (sem etapa gramatical)
+    private string tipoDesafioAlfabetizacao = ""; // "vogal", "silaba" ou "consoante"
+    private ConteudoQuintoAno.Interpretacao interpretacaoAtual;
+    public bool PerguntaInterpretacaoAtiva => perguntaInterpretacao;
+    public ConteudoQuintoAno.Interpretacao InterpretacaoAtual => interpretacaoAtual;
+    public string TipoDesafioAlfabetizacao => tipoDesafioAlfabetizacao;
+
+    /// <summary>O que o botão "Ouvir" lê para a pergunta atual.</summary>
+    public string TextoParaLeitura { get; private set; } = "";
+
+    // Desenho da palavra mostrado ao lado do balão (só palavras que têm desenho no servidor)
+    private string palavraParaFigura;
+
+    // Habilidade da BNCC da pergunta atual e acertos/erros da fase (enviados ao servidor ao terminar a fase)
+    private string habilidadeAtual = "";
+    public string HabilidadeAtual => habilidadeAtual;
+    private readonly Dictionary<string, int[]> habilidadesDaFase = new Dictionary<string, int[]>();
+    private string alunoDasHabilidades = "";
+
+    private void RegistrarResposta(bool acertou)
+    {
+        if (faseResolvidaPeloProfessor || string.IsNullOrEmpty(habilidadeAtual)) return; // resposta do professor não conta
+        string aluno = GerenciadorPerfis.PerfilAtivo;
+        if (alunoDasHabilidades != aluno) { EnviarHabilidadesDaFase(); alunoDasHabilidades = aluno; }
+        if (!habilidadesDaFase.TryGetValue(habilidadeAtual, out int[] c)) habilidadesDaFase[habilidadeAtual] = c = new int[2];
+        if (acertou) c[0]++; else c[1]++;
+    }
+
+    /// <summary>Manda pela fila (não se perde sem internet) os acertos/erros por habilidade da fase.</summary>
+    private void EnviarHabilidadesDaFase()
+    {
+        if (habilidadesDaFase.Count == 0) return;
+        var itens = new List<ServicoNuvem.DtoHabilidadeItem>();
+        foreach (var kv in habilidadesDaFase) itens.Add(new ServicoNuvem.DtoHabilidadeItem { codigo = kv.Key, acertos = kv.Value[0], erros = kv.Value[1] });
+        habilidadesDaFase.Clear();
+        if (ServicoNuvem.Instancia != null && !string.IsNullOrEmpty(alunoDasHabilidades))
+            ServicoNuvem.Instancia.EnviarHabilidades(alunoDasHabilidades, itens);
+    }
+
+    /// <summary>Ortografia do 3º ao 5º ano (palavra com letra/dígrafo faltando).</summary>
+    private string CodigoOrtografia(string resposta)
+    {
+        int ano = anoEscolar >= 3 ? anoEscolar : 3;
+        if (ano >= 5) return "EF05LP01";
+        switch (resposta)
+        {
+            case "SS": case "S": case "C": return ano == 4 ? "EF04LP01" : "EF03LP01";
+            case "CH": return ano == 3 ? "EF03LP03" : "EF35LP13";
+            case "X": case "Z": case "Ç": return "EF35LP13"; // correspondências irregulares
+            default: return ano == 4 ? "EF04LP01" : "EF03LP01";
+        }
+    }
+
+    /// <summary>Classe gramatical da 2ª etapa do Português Difícil.</summary>
+    private static string CodigoClasse(string classe)
+    {
+        string c = (classe ?? "").Trim().ToLowerInvariant();
+        if (c.StartsWith("substant") || c.StartsWith("verbo")) return "EF03LP08";
+        if (c.StartsWith("adjet")) return "EF03LP09";
+        if (c.StartsWith("pronom")) return "EF35LP14";
+        if (c.StartsWith("conjun")) return "EF05LP07";
+        if (c.StartsWith("adv")) return "EF07LP09";
+        return "";
+    }
+
     private string respostaCorreta;
     private string palavraCompleta;
     private bool podeInteragir = true;
@@ -100,6 +181,7 @@ public class GameManager : MonoBehaviour
     public string UltimaPerguntaMatematica { get; private set; } = "";
     public string UltimoPassoAPassoMatematica { get; private set; } = "";
     public int UltimaRespostaMatematica { get; private set; } = 0;
+    public string UltimaRespostaMatematicaTexto { get; private set; } = ""; // com centavos, ex.: "4,25"
 
     // Controle de 2 Etapas da Fase Difícil de Português (0 = Palavra, 1 = Classe Gramatical)
     private int etapaDificilAtual = 0;
@@ -115,6 +197,7 @@ public class GameManager : MonoBehaviour
     {
         Instance = this;
         if (vidasMaximas > 2) vidasMaximas = 2;
+        InterfaceUtil.GarantirFonteReserva(); // ponto, vírgula e "?" nos balões e nas cartas
 
         if (palavrasFaceis == null || palavrasFaceis.Count < 180) CarregarPalavrasFaceis();
         if (palavrasMedias == null || palavrasMedias.Count < 180) CarregarPalavrasMedias();
@@ -129,10 +212,16 @@ public class GameManager : MonoBehaviour
 
     public void IniciarFaseEspecifica(int numeroFase, int nivelDificuldade, bool isMath)
     {
+        EnviarHabilidadesDaFase(); // respostas de uma fase abandonada no meio também contam
         nivelAtualID = nivelDificuldade;
         faseAtualID = numeroFase;
         jogandoMatematica = isMath;
         conteudoAlfabetizacao = GerenciadorPerfis.AlunoAtivoEmAlfabetizacao();
+        anoEscolar = GerenciadorPerfis.AnoEscolarDoAlunoAtivo();
+        faseResolvidaPeloProfessor = false;
+        perguntaAtual = 1;
+        // 1º/2º ano: 2 perguntas; Português Difícil: 2 (cada uma já tem 2 etapas); demais: 3
+        totalPerguntas = conteudoAlfabetizacao ? 2 : (!isMath && nivelDificuldade == 2 ? 2 : 3);
 
         if (isMath)
         {
@@ -183,9 +272,27 @@ public class GameManager : MonoBehaviour
         CancelInvoke();
         podeInteragir = false;
         tempoUltimoClique = Time.time;
-        etapaDificilAtual = 0;
 
-        if (isMath)
+        ConfigurarPergunta();
+
+        // Aguarda 0.45s (tempo da transição da tela) para liberar cliques nos botões de cartas
+        Invoke(nameof(AtivarInteracaoGameplay), 0.45f);
+    }
+
+    /// <summary>Monta a pergunta atual da fase (palavra, frase, texto ou conta) de acordo com a matéria, o nível e o ano.</summary>
+    private void ConfigurarPergunta()
+    {
+        ApoioGameplay.LimparPergunta(); // tira desenho/dica da pergunta anterior antes de mexer no balão
+        etapaDificilAtual = 0;
+        perguntaComTexto = false;
+        perguntaInterpretacao = false;
+        tipoDesafioAlfabetizacao = "";
+        palavraParaFigura = null;
+        habilidadeAtual = "";
+        int numeroFase = faseAtualID;
+        int nivelDificuldade = nivelAtualID;
+
+        if (jogandoMatematica)
         {
             ConfigurarFaseMatematica(numeroFase, nivelDificuldade);
         }
@@ -197,7 +304,9 @@ public class GameManager : MonoBehaviour
         {
             if (nivelDificuldade == 2)
             {
-                ConfigurarFaseFrase(numeroFase);
+                // 5º ano: metade das perguntas do Difícil é leitura de um texto curto
+                if (anoEscolar == 5 && Random.value < 0.5f) ConfigurarFaseInterpretacao(numeroFase);
+                else ConfigurarFaseFrase(numeroFase);
             }
             else
             {
@@ -208,6 +317,9 @@ public class GameManager : MonoBehaviour
                     palavraCompleta = palavraDaFase.Trim().ToUpper();
                     AplicarRegrasDeLacuna();
                     ConfigurarBotoesComRegras();
+                    TextoParaLeitura = "Complete a palavra: " + palavraCompleta.ToLowerInvariant();
+                    palavraParaFigura = palavraCompleta;
+                    habilidadeAtual = CodigoOrtografia(respostaCorreta);
                 }
                 else
                 {
@@ -216,8 +328,20 @@ public class GameManager : MonoBehaviour
             }
         }
 
-        // Aguarda 0.45s (tempo da transição da tela) para liberar cliques nos botões de cartas
-        Invoke(nameof(AtivarInteracaoGameplay), 0.45f);
+        // No 1º e 2º ano a pergunta é lida em voz alta sozinha
+        ApoioGameplay.NovaPergunta(conteudoAlfabetizacao);
+        if (!string.IsNullOrEmpty(palavraParaFigura) && uiAtual != null && uiAtual.balaoTexto != null)
+            ApoioGameplay.MostrarFigura(palavraParaFigura, uiAtual.balaoTexto);
+    }
+
+    /// <summary>Acertou uma pergunta e ainda há outras na fase.</summary>
+    private void ProximaPergunta()
+    {
+        AtualizarIndicadorFase(faseAtualID);
+        ConfigurarPergunta();
+        podeInteragir = false;
+        tempoUltimoClique = Time.time;
+        Invoke(nameof(AtivarInteracaoGameplay), 0.35f);
     }
 
     void AtualizarUIVidas()
@@ -248,7 +372,8 @@ public class GameManager : MonoBehaviour
         }
 
         string materia = jogandoMatematica ? "MATEMÁTICA" : "PORTUGUÊS";
-        string textoFase = $"<b><color=#FFE082>{materia}</color>  •  {nomeNivel}  •  <color=#FFFFFF>FASE {numeroFase + 1}/30</color></b>";
+        string textoFase = $"<b><color=#FFE082>{materia}</color>  •  {nomeNivel}  •  <color=#FFFFFF>FASE {numeroFase + 1}/30</color>" +
+                           (totalPerguntas > 1 ? $"  •  <color=#A7F3D0>PERGUNTA {perguntaAtual}/{totalPerguntas}</color>" : "") + "</b>";
 
         if (uiAtual.textoIndicadorFase != null)
         {
@@ -445,12 +570,18 @@ public class GameManager : MonoBehaviour
         // Semente dinâmica para que a cada entrada a continha tenha valores novos
         Random.InitState((int)(System.DateTime.Now.Ticks ^ (numeroFase * 37 + nivelDificuldade * 1000)));
 
+        // 5º ano: metade das perguntas do Difícil são frações, porcentagem, dinheiro e problemas
+        if (!conteudoAlfabetizacao && anoEscolar == 5 && nivelDificuldade == 2 && Random.value < 0.5f)
+        {
+            ConfigurarProblemaQuintoAno();
+            return;
+        }
+
         if (conteudoAlfabetizacao)
         {
-            // 1º e 2º ano: somas só com números de 1 algarismo
-            ConteudoAlfabetizacao.SortearSoma(nivelDificuldade, out int a, out int b);
-            pergunta = $"{a} + {b} = ?"; correta = a + b;
-            passoAPasso = ConteudoAlfabetizacao.PassoAPassoSoma(a, b);
+            // 1º ano: somas de 1 algarismo. 2º ano: somas/subtrações, dezenas, dobro, metade e probleminhas
+            ConteudoAlfabetizacao.SortearConta(anoEscolar, nivelDificuldade, out pergunta, out correta, out passoAPasso, out bool comTexto);
+            perguntaComTexto = comTexto;
         }
         else if (nivelDificuldade == 0)
         {
@@ -567,15 +698,29 @@ public class GameManager : MonoBehaviour
             }
         }
 
+        // Habilidade da BNCC da conta
+        if (conteudoAlfabetizacao)
+        {
+            if (anoEscolar != 2) habilidadeAtual = "EF01MA06";
+            else if (pergunta.Contains("dobro") || pergunta.Contains("metade")) habilidadeAtual = "EF02MA08";
+            else if (perguntaComTexto || nivelDificuldade >= 1) habilidadeAtual = "EF02MA06";
+            else habilidadeAtual = "EF02MA05";
+        }
+        else if (nivelDificuldade == 0) habilidadeAtual = numeroFase < 20 ? "EF03MA05" : "EF03MA03"; // + e -, depois tabuada
+        else if (nivelDificuldade == 1) habilidadeAtual = numeroFase < 10 ? "EF04MA07" : "EF04MA05"; // divisão, depois expressões
+        else habilidadeAtual = "EF04MA05"; // expressões com parênteses (habilidade mais próxima na BNCC)
+
         UltimaPerguntaMatematica = pergunta;
         UltimoPassoAPassoMatematica = passoAPasso;
         UltimaRespostaMatematica = correta;
+        UltimaRespostaMatematicaTexto = correta.ToString();
+        TextoParaLeitura = LeitorDeVoz.ContaFalada(pergunta);
 
         respostaCorreta = correta.ToString();
         if (uiAtual.balaoTexto != null)
         {
             uiAtual.balaoTexto.enableAutoSizing = true;
-            uiAtual.balaoTexto.fontSizeMin = 28f;
+            uiAtual.balaoTexto.fontSizeMin = perguntaComTexto ? 20f : 28f; // problema escrito precisa caber no balão
             uiAtual.balaoTexto.fontSizeMax = 56f;
             uiAtual.balaoTexto.text = pergunta;
         }
@@ -606,14 +751,73 @@ public class GameManager : MonoBehaviour
         }
     }
 
-    // 1º e 2º ano (Fácil, Médio e Difícil): palavra pequena com uma vogal faltando; as cartas são vogais.
+    /// <summary>5º ano: frações, porcentagem, dinheiro com centavos e problemas de duas etapas.</summary>
+    void ConfigurarProblemaQuintoAno()
+    {
+        ConteudoQuintoAno.SortearProblema(out string pergunta, out string correta, out List<string> opcoes, out string passo, out bool comTexto, out string habilidade);
+        perguntaComTexto = comTexto;
+        habilidadeAtual = habilidade;
+        UltimaPerguntaMatematica = pergunta;
+        UltimoPassoAPassoMatematica = passo;
+        UltimaRespostaMatematica = int.TryParse(correta, out int inteiro) ? inteiro : 0;
+        UltimaRespostaMatematicaTexto = correta;
+        TextoParaLeitura = LeitorDeVoz.ContaFalada(pergunta);
+        respostaCorreta = correta;
+
+        if (uiAtual.balaoTexto != null)
+        {
+            uiAtual.balaoTexto.enableAutoSizing = true;
+            uiAtual.balaoTexto.fontSizeMin = comTexto ? 20f : 28f;
+            uiAtual.balaoTexto.fontSizeMax = 56f;
+            uiAtual.balaoTexto.text = pergunta;
+        }
+        for (int i = 0; i < uiAtual.botoes.Length; i++)
+        {
+            if (i < opcoes.Count && uiAtual.botoes[i] != null) uiAtual.botoes[i].DefinirLetra(opcoes[i]);
+        }
+    }
+
+    /// <summary>5º ano: texto curto + pergunta de interpretação (uma etapa só).</summary>
+    void ConfigurarFaseInterpretacao(int numeroFase)
+    {
+        perguntaInterpretacao = true;
+        habilidadeAtual = "EF15LP03"; // localizar informações explícitas em textos
+        interpretacaoAtual = ConteudoQuintoAno.SortearInterpretacao(numeroFase);
+        respostaCorreta = interpretacaoAtual.correta;
+        palavraCompleta = interpretacaoAtual.texto + " " + interpretacaoAtual.pergunta + " " + interpretacaoAtual.correta;
+        TextoParaLeitura = interpretacaoAtual.texto + " " + interpretacaoAtual.pergunta;
+
+        if (uiAtual.balaoTexto != null)
+        {
+            uiAtual.balaoTexto.enableAutoSizing = true;
+            uiAtual.balaoTexto.fontSizeMin = 22;
+            uiAtual.balaoTexto.fontSizeMax = 52;
+            uiAtual.balaoTexto.lineSpacing = 0;
+            uiAtual.balaoTexto.margin = new Vector4(15, 10, 15, 10);
+            uiAtual.balaoTexto.alignment = TextAlignmentOptions.Center;
+            uiAtual.balaoTexto.text = $"{interpretacaoAtual.texto}\n<b><color=#1D4ED8>{interpretacaoAtual.pergunta}</color></b>";
+        }
+
+        List<string> opcoes = EmbaralharLista(new List<string> { interpretacaoAtual.correta, interpretacaoAtual.errada1, interpretacaoAtual.errada2 });
+        for (int i = 0; i < uiAtual.botoes.Length; i++)
+        {
+            if (i < opcoes.Count && uiAtual.botoes[i] != null) uiAtual.botoes[i].DefinirLetra(opcoes[i]);
+        }
+    }
+
+    // 1º e 2º ano (Fácil, Médio e Difícil): palavra pequena com vogal, sílaba ou consoante faltando.
     void ConfigurarFaseVogalAlfabetizacao(int numeroFase, int nivelDificuldade)
     {
         int qtdCartas = (uiAtual.botoes != null) ? uiAtual.botoes.Length : 3;
-        ConteudoAlfabetizacao.DesafioVogal desafio = ConteudoAlfabetizacao.SortearDesafioVogal(nivelDificuldade, numeroFase, qtdCartas);
+        ConteudoAlfabetizacao.DesafioLacuna desafio = ConteudoAlfabetizacao.SortearDesafio(anoEscolar, nivelDificuldade, numeroFase, qtdCartas);
 
         palavraCompleta = desafio.palavra;
-        respostaCorreta = desafio.vogal;
+        respostaCorreta = desafio.resposta;
+        tipoDesafioAlfabetizacao = desafio.tipo;
+        palavraParaFigura = desafio.palavra;
+        habilidadeAtual = desafio.tipo == "silaba" ? "EF02LP02" : desafio.tipo == "consoante" ? "EF02LP03" : (anoEscolar == 2 ? "EF02LP04" : "EF01LP08");
+        string oQueFalta = desafio.tipo == "silaba" ? "Qual sílaba" : desafio.tipo == "consoante" ? "Qual letra" : "Qual vogal";
+        TextoParaLeitura = $"{oQueFalta} falta na palavra {desafio.palavra.ToLowerInvariant()}?";
         if (uiAtual.balaoTexto != null)
         {
             if (nivelDificuldade == 2)
@@ -642,6 +846,9 @@ public class GameManager : MonoBehaviour
 
         respostaCorreta = fraseDificilAtual.palavraCorreta.Trim().ToUpper();
         palavraCompleta = fraseOriginalDificil.Replace("_____", respostaCorreta);
+        TextoParaLeitura = "Complete a frase: " + fraseOriginalDificil.Replace("_____", "...");
+        // Homófonos/parônimos: sem habilidade própria até o 5º ano na BNCC → grafia irregular/ortografia (mais próximas)
+        habilidadeAtual = anoEscolar >= 5 ? "EF05LP01" : "EF35LP13";
 
         if (uiAtual.balaoTexto != null)
         {
@@ -846,8 +1053,9 @@ public class GameManager : MonoBehaviour
 
         if (jogandoMatematica)
         {
-            entradaNormalizada = Regex.Replace(entradaNormalizada, "[^0-9-]", "");
-            corretaNormalizada = Regex.Replace(corretaNormalizada, "[^0-9-]", "");
+            // Mantém a vírgula: no 5º ano há respostas com centavos (ex.: 4,25 é diferente de 42,5)
+            entradaNormalizada = Regex.Replace(entradaNormalizada, "[^0-9,-]", "");
+            corretaNormalizada = Regex.Replace(corretaNormalizada, "[^0-9,-]", "");
         }
         else
         {
@@ -857,8 +1065,11 @@ public class GameManager : MonoBehaviour
 
         if (entradaNormalizada == corretaNormalizada && !string.IsNullOrEmpty(corretaNormalizada))
         {
-            if (!jogandoMatematica && nivelAtualID == 2 && !conteudoAlfabetizacao && etapaDificilAtual == 0)
+            RegistrarResposta(true);
+            if (!jogandoMatematica && nivelAtualID == 2 && !conteudoAlfabetizacao && !perguntaInterpretacao && etapaDificilAtual == 0)
             {
+                ApoioGameplay.Esconder();
+                habilidadeAtual = CodigoClasse(fraseDificilAtual.classeGramatical); // 2ª etapa: classe gramatical
                 if (sfxSource != null && somAcerto != null) sfxSource.PlayOneShot(somAcerto);
                 etapaDificilAtual = 1;
 
@@ -880,6 +1091,7 @@ public class GameManager : MonoBehaviour
                 respostaCorreta = fraseDificilAtual.classeGramatical.Trim().ToUpper();
                 List<string> opcoesGram = new List<string>(fraseDificilAtual.opcoesGramaticais);
                 opcoesGram = EmbaralharLista(opcoesGram);
+                TextoParaLeitura = $"A palavra {fraseDificilAtual.palavraCorreta.ToLowerInvariant()} é: {string.Join(", ", opcoesGram).ToLowerInvariant()}?";
 
                 for (int i = 0; i < uiAtual.botoes.Length; i++)
                 {
@@ -894,27 +1106,21 @@ public class GameManager : MonoBehaviour
             }
 
             podeInteragir = false;
+            ApoioGameplay.Esconder();
 
             if (sfxSource != null && somAcerto != null) sfxSource.PlayOneShot(somAcerto);
 
-            if (gerenciadorFases != null)
-            {
-                int segundosNaFase = Mathf.RoundToInt(Time.realtimeSinceStartup - tempoInicioFase);
-                gerenciadorFases.MarcarFaseComoCompleta(vidasAtuais, vidasMaximas, segundosNaFase);
-            }
-
-            string materia = jogandoMatematica ? "Math" : "Port";
-            string chaveVidas = $"VidasRestantes_{materia}_{nivelAtualID}_{faseAtualID}";
-            int vidasSalvas = GerenciadorPerfis.GetInt(chaveVidas, 0);
-            if (vidasAtuais > vidasSalvas)
-            {
-                GerenciadorPerfis.SetInt(chaveVidas, vidasAtuais);
-                PlayerPrefs.Save();
-            }
-
             if (uiAtual.balaoTexto != null)
             {
-                if (jogandoMatematica) uiAtual.balaoTexto.text = uiAtual.balaoTexto.text.Replace("?", corretaNormalizada);
+                if (jogandoMatematica)
+                {
+                    if (perguntaComTexto) uiAtual.balaoTexto.text += $"\n<color=#007700><b>Resposta: {respostaCorreta}</b></color>";
+                    else uiAtual.balaoTexto.text = uiAtual.balaoTexto.text.Replace("?", respostaCorreta);
+                }
+                else if (perguntaInterpretacao)
+                {
+                    uiAtual.balaoTexto.text = $"Muito bem!\n<color=#007700><b>{interpretacaoAtual.correta}</b></color>";
+                }
                 else if (nivelAtualID == 2 && !conteudoAlfabetizacao)
                 {
                     uiAtual.balaoTexto.enableAutoSizing = true;
@@ -925,10 +1131,45 @@ public class GameManager : MonoBehaviour
                 else uiAtual.balaoTexto.text = palavraCompleta;
             }
 
+            // Ainda há perguntas nesta fase: a próxima aparece com as mesmas vidas
+            if (perguntaAtual < totalPerguntas && !faseResolvidaPeloProfessor)
+            {
+                perguntaAtual++;
+                Invoke(nameof(ProximaPergunta), 1.1f);
+                return;
+            }
+
+            // Fase concluída
+            string perfil = GerenciadorPerfis.PerfilAtivo;
+            string materia = jogandoMatematica ? "Math" : "Port";
+            int estrelasAntes = ResgateLetrinhas.EstrelasDoAluno(perfil);
+            string chaveProfessor = ResgateLetrinhas.ChaveResolvidaProfessor(materia, nivelAtualID, faseAtualID);
+            if (faseResolvidaPeloProfessor) GerenciadorPerfis.SetInt(chaveProfessor, 1);          // fase do professor não dá estrelas
+            else if (GerenciadorPerfis.GetInt(chaveProfessor, 0) == 1) GerenciadorPerfis.SetInt(chaveProfessor, 0);
+
+            if (gerenciadorFases != null)
+            {
+                int segundosNaFase = Mathf.RoundToInt(Time.realtimeSinceStartup - tempoInicioFase);
+                gerenciadorFases.MarcarFaseComoCompleta(vidasAtuais, vidasMaximas, segundosNaFase, !faseResolvidaPeloProfessor);
+            }
+            EnviarHabilidadesDaFase();
+
+            string chaveVidas = $"VidasRestantes_{materia}_{nivelAtualID}_{faseAtualID}";
+            int vidasSalvas = GerenciadorPerfis.GetInt(chaveVidas, 0);
+            if (vidasAtuais > vidasSalvas)
+            {
+                GerenciadorPerfis.SetInt(chaveVidas, vidasAtuais);
+            }
+            PlayerPrefs.Save();
+
+            if (!faseResolvidaPeloProfessor)
+                TelaLetrinhas.MostrarRecompensa(perfil, estrelasAntes, ResgateLetrinhas.EstrelasDoAluno(perfil));
+
             Invoke("MostrarTelaFaseConcluida", 1.0f);
         }
         else
         {
+            RegistrarResposta(false);
             vidasAtuais--;
             AtualizarUIVidas();
 
@@ -937,8 +1178,76 @@ public class GameManager : MonoBehaviour
             if (vidasAtuais <= 0)
             {
                 podeInteragir = false;
+                ApoioGameplay.Esconder();
+                EnviarHabilidadesDaFase(); // a fase não concluída também mostra o que precisa de reforço
                 Invoke("MostrarTelaGameOver", 0.5f);
             }
+            else
+            {
+                string dica = GerarDica(out string dicaFalada);
+                ApoioGameplay.MostrarDica(dica, conteudoAlfabetizacao ? dicaFalada : null);
+            }
+        }
+    }
+
+    /// <summary>Dica depois de um erro: mostra o caminho sem entregar a resposta.</summary>
+    private string GerarDica(out string falada)
+    {
+        falada = "";
+        if (jogandoMatematica)
+        {
+            string pergunta = UltimaPerguntaMatematica ?? "";
+            if (conteudoAlfabetizacao)
+            {
+                string d;
+                if (pergunta.Contains("dobro")) d = "Dobro é somar o número com ele mesmo.";
+                else if (pergunta.Contains("metade")) d = "Metade é dividir em duas partes iguais.";
+                else if (perguntaComTexto) d = "Ganhou é juntar (somar). Sobrou é tirar (diminuir).";
+                else if (pergunta.Contains(" - ")) d = "Comece no primeiro número e volte nos dedos.";
+                else d = "Comece pelo número maior e conte o outro nos dedos.";
+                falada = d;
+                return d;
+            }
+            // Mostra o caminho, sem os números da conta (o passo a passo completo aparece no fim, na tela de explicação)
+            if (perguntaComTexto) return "Separe em etapas: primeiro descubra o total, depois o que mudou (ganhou, gastou, sobrou).";
+            if (pergunta.Contains("R$")) return "Coloque vírgula embaixo de vírgula: some ou tire os centavos e depois os reais.";
+            if (pergunta.Contains("%")) return "10% é dividir por 10; 50% é a metade; 25% é a metade da metade.";
+            if (pergunta.Contains("/")) return "Divida o total pelo número de baixo da fração e multiplique pelo de cima.";
+            if (pergunta.Contains("(")) return "Resolva primeiro o que está dentro dos parênteses.";
+            if (pergunta.Contains("÷")) return "Pense na tabuada ao contrário: que número, vezes o divisor, dá o número da conta?";
+            if (pergunta.Contains(" x ")) return "Multiplicar é somar o mesmo número várias vezes. Use a tabuada.";
+            if (pergunta.Contains(" - ")) return "Tire primeiro as unidades e depois as dezenas. Se faltar, empreste uma dezena.";
+            return "Some primeiro as unidades e depois as dezenas. Passou de 9? Vai um para as dezenas.";
+        }
+
+        if (conteudoAlfabetizacao)
+        {
+            falada = palavraCompleta.ToLowerInvariant();
+            if (tipoDesafioAlfabetizacao == "silaba") return "Bata uma palma para cada pedacinho da palavra. Qual pedacinho está faltando?";
+            if (tipoDesafioAlfabetizacao == "consoante") return "Fale a palavra bem devagar. Que som aparece no lugar do tracinho?";
+            return "Fale a palavra devagar e escute: que vogal está faltando?";
+        }
+
+        if (perguntaInterpretacao) return "Leia o texto de novo: a resposta está escrita nele.";
+
+        if (nivelAtualID == 2)
+        {
+            return etapaDificilAtual == 0
+                ? "Leia a frase trocando o tracinho por cada opção. Qual faz sentido?"
+                : "Substantivo dá nome; verbo é ação; adjetivo é característica; advérbio diz como, quando ou onde; pronome substitui o nome; conjunção liga ideias.";
+        }
+
+        switch (respostaCorreta)
+        {
+            case "SS": return "Entre duas vogais, o som de S forte se escreve com SS (como em PASSO).";
+            case "Ç": return "O Ç só aparece antes de A, O e U (como em PALHAÇO).";
+            case "C": return "Antes de E e I, a letra C tem som de S (como em CINEMA).";
+            case "S": return "Entre duas vogais, um S sozinho tem som de Z (como em CASA).";
+            case "Z": return "Pense em palavras da mesma família: elas mantêm a mesma letra.";
+            case "CH":
+            case "X": return "CH e X podem ter o mesmo som. Lembre de palavras da mesma família.";
+            case "A": case "E": case "I": case "O": case "U": return "Fale a palavra devagar e preste atenção no som da vogal.";
+            default: return "Fale a palavra devagar e preste atenção no som que está faltando.";
         }
     }
 
@@ -1107,13 +1416,15 @@ public class GameManager : MonoBehaviour
 
     public void ResolverFaseProfessor()
     {
+        // "Auto-completar" do professor: a fase é liberada, mas não vai para o desempenho do aluno no servidor
+        faseResolvidaPeloProfessor = true;
         if (jogandoMatematica)
         {
             VerificarResposta(respostaCorreta);
         }
         else
         {
-            if (nivelAtualID == 2 && !conteudoAlfabetizacao)
+            if (nivelAtualID == 2 && !conteudoAlfabetizacao && !perguntaInterpretacao)
             {
                 if (etapaDificilAtual == 0)
                 {

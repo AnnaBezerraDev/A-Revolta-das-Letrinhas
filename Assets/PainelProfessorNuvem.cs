@@ -39,7 +39,7 @@ public class PainelProfessorNuvem : MonoBehaviour
     private const int FASES_POR_NIVEL = 30;
     private const int FASES_POR_MATERIA = 90;
 
-    private enum Aba { Sala, Alunos }
+    private enum Aba { Sala, Alunos, Habilidades }
 
     // =====================================================================
     // ESTADO
@@ -53,13 +53,12 @@ public class PainelProfessorNuvem : MonoBehaviour
 
     private GameObject raiz;
     private TextMeshProUGUI txtSubtitulo;
-    private Image imgAbaSala, imgAbaAlunos;
-    private TextMeshProUGUI txtAbaSala, txtAbaAlunos;
+    private Image imgAbaSala, imgAbaAlunos, imgAbaHab;
+    private TextMeshProUGUI txtAbaSala, txtAbaAlunos, txtAbaHab;
     private RectTransform areaChips;
     private Transform chipsContent;
     private TextMeshProUGUI txtSalaFixa;
-    private GameObject btnSenhaGeral;
-    private RectTransform viewSala, viewAlunos, viewMensagem;
+    private RectTransform viewSala, viewAlunos, viewHabilidades, viewMensagem;
     private TextMeshProUGUI txtMensagem;
     private GameObject btnTentarNovamente;
     private Transform listaAlunosContent;
@@ -224,6 +223,8 @@ public class PainelProfessorNuvem : MonoBehaviour
         Esticar(viewSala);
         viewAlunos = NovoRect("VisaoAlunos", conteudo);
         Esticar(viewAlunos);
+        viewHabilidades = NovoRect("VisaoHabilidades", conteudo);
+        Esticar(viewHabilidades);
         ConstruirEstruturaAlunos();
 
         // Mensagens (carregando / erro)
@@ -268,11 +269,7 @@ public class PainelProfessorNuvem : MonoBehaviour
         hl.childForceExpandHeight = true;
 
         AdicionarLargura(Botao(botoes, "BtnAtualizar", "Atualizar", COR_PRIMARIA_ESCURA, Color.white, 20, Recarregar).gameObject, 170);
-        btnSenhaGeral = Botao(botoes, "BtnSenhaGeral", "Senha geral", COR_PRIMARIA_ESCURA, Color.white, 20, () =>
-        {
-            if (area != null) area.AbrirAlterarSenhaGeral();
-        }).gameObject;
-        AdicionarLargura(btnSenhaGeral, 190);
+        // A senha da coordenação agora é definida no painel de administração (servidor), não mais por computador.
         AdicionarLargura(Botao(botoes, "BtnSair", "Sair da sessão", Hex("DC2626"), Color.white, 20, () =>
         {
             if (area != null) area.EncerrarSessaoProfessor();
@@ -299,9 +296,14 @@ public class PainelProfessorNuvem : MonoBehaviour
         imgAbaAlunos = abaAlunos.GetComponent<Image>();
         txtAbaAlunos = abaAlunos.GetComponentInChildren<TextMeshProUGUI>();
 
+        Button abaHab = Botao(barra, "AbaHabilidades", "Habilidades BNCC", COR_CARD, COR_PRIMARIA, 22, () => TrocarAba(Aba.Habilidades));
+        Posicionar((RectTransform)abaHab.transform, new Vector2(0, 0), new Vector2(0, 1), new Vector2(492, 0), new Vector2(752, 0));
+        imgAbaHab = abaHab.GetComponent<Image>();
+        txtAbaHab = abaHab.GetComponentInChildren<TextMeshProUGUI>();
+
         // Seletor de salas (acesso geral) ou nome da sala (professor da sala)
         areaChips = NovoRect("SeletorSalas", barra);
-        Posicionar(areaChips, new Vector2(0, 0), new Vector2(1, 1), new Vector2(500, 0), Vector2.zero);
+        Posicionar(areaChips, new Vector2(0, 0), new Vector2(1, 1), new Vector2(770, 0), Vector2.zero);
         ScrollRect sr = areaChips.gameObject.AddComponent<ScrollRect>();
         sr.vertical = false;
         sr.horizontal = true;
@@ -332,7 +334,7 @@ public class PainelProfessorNuvem : MonoBehaviour
         chipsContent = content;
 
         txtSalaFixa = Texto(barra, "", 24, COR_TITULO, TextAlignmentOptions.MidlineRight, true);
-        Posicionar(txtSalaFixa.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(500, 0), Vector2.zero);
+        Posicionar(txtSalaFixa.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(770, 0), Vector2.zero);
     }
 
     private void ConstruirEstruturaAlunos()
@@ -375,9 +377,6 @@ public class PainelProfessorNuvem : MonoBehaviour
                 : $"  ·  <color=#FDE68A><b>Contrato vence em {sn.diasRestantesContrato} dia(s)</b></color>";
         }
         txtSubtitulo.text = $"{escola}  ·  {escopo}  ·  {AreaDoProfessor.NomeProfessorLogado}{aviso}";
-
-        if (btnSenhaGeral != null)
-            btnSenhaGeral.SetActive(area != null && area.SessaoLocalGeral);
     }
 
     private void TrocarAba(Aba nova)
@@ -389,13 +388,16 @@ public class PainelProfessorNuvem : MonoBehaviour
 
     private void AtualizarAbas()
     {
-        bool sala = abaAtual == Aba.Sala;
+        bool sala = abaAtual == Aba.Sala, alunos = abaAtual == Aba.Alunos, hab = abaAtual == Aba.Habilidades;
         imgAbaSala.color = sala ? COR_PRIMARIA : COR_CARD;
         txtAbaSala.color = sala ? Color.white : COR_PRIMARIA;
-        imgAbaAlunos.color = sala ? COR_CARD : COR_PRIMARIA;
-        txtAbaAlunos.color = sala ? COR_PRIMARIA : Color.white;
+        imgAbaAlunos.color = alunos ? COR_PRIMARIA : COR_CARD;
+        txtAbaAlunos.color = alunos ? Color.white : COR_PRIMARIA;
+        imgAbaHab.color = hab ? COR_PRIMARIA : COR_CARD;
+        txtAbaHab.color = hab ? Color.white : COR_PRIMARIA;
         viewSala.gameObject.SetActive(sala);
-        viewAlunos.gameObject.SetActive(!sala);
+        viewAlunos.gameObject.SetActive(alunos);
+        viewHabilidades.gameObject.SetActive(hab);
     }
 
     private void RenderChips()
@@ -436,7 +438,8 @@ public class PainelProfessorNuvem : MonoBehaviour
     private void RenderAbaAtual()
     {
         if (abaAtual == Aba.Sala) RenderVisaoSala();
-        else RenderVisaoAlunos();
+        else if (abaAtual == Aba.Alunos) RenderVisaoAlunos();
+        else RenderHabilidades();
     }
 
     private void MostrarMensagem(string msg, bool erro)
@@ -447,6 +450,90 @@ public class PainelProfessorNuvem : MonoBehaviour
         txtMensagem.text = msg;
         txtMensagem.color = erro ? Hex("B91C1C") : COR_TEXTO;
         btnTentarNovamente.SetActive(erro);
+    }
+
+    // =====================================================================
+    // ABA 3: HABILIDADES DA BNCC
+    // =====================================================================
+    private int pedidoHabilidades;
+
+    private void RenderHabilidades()
+    {
+        Limpar(viewHabilidades);
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn == null) return;
+
+        // Uma sala (escolhida ou a do professor) ou a escola toda (coordenação em "Todas as salas")
+        List<ServicoNuvem.DtoSalaResumo> exibidas = SalasExibidas();
+        string turmaId = (!ProfessorRestrito && salaSelecionadaId == TODAS) ? "" : (exibidas.Count > 0 ? exibidas[0].turmaId : "");
+        string escopo = string.IsNullOrEmpty(turmaId) ? "toda a escola" : $"sala {exibidas[0].nomeTurma}";
+
+        TextMeshProUGUI titulo = Texto(viewHabilidades, $"Habilidades da BNCC — {escopo}", 26, COR_TITULO, TextAlignmentOptions.MidlineLeft, true);
+        Posicionar(titulo.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(4, -44), new Vector2(-4, 0));
+        TextMeshProUGUI legenda = Texto(viewHabilidades,
+            "Percentual de acerto em cada habilidade (todas as respostas, inclusive de fases não concluídas). " +
+            "<color=#B91C1C>Precisam de atenção</color>: 4 respostas ou mais e menos de 60% de acerto.", 17, COR_SUAVE, TextAlignmentOptions.TopLeft);
+        Posicionar(legenda.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(4, -94), new Vector2(-4, -48));
+
+        RectTransform rtScroll = NovoRect("ScrollHabilidades", viewHabilidades);
+        Posicionar(rtScroll, new Vector2(0, 0), new Vector2(1, 1), Vector2.zero, new Vector2(0, -100));
+        Transform lista = CriarScrollVertical(rtScroll, 10);
+        TextMeshProUGUI carregando = Texto(lista, "Carregando...", 22, COR_SUAVE, TextAlignmentOptions.Center);
+        carregando.gameObject.AddComponent<LayoutElement>().preferredHeight = 80;
+
+        int pedido = ++pedidoHabilidades;
+        sn.BuscarRelatorioHabilidades(turmaId, dados =>
+        {
+            if (raiz == null || !raiz.activeSelf || abaAtual != Aba.Habilidades || pedido != pedidoHabilidades) return;
+            Limpar(lista);
+            if (dados == null)
+            {
+                TextMeshProUGUI erro = Texto(lista, "Não foi possível carregar o relatório. Verifique a internet.", 22, COR_ERRO, TextAlignmentOptions.Center);
+                erro.gameObject.AddComponent<LayoutElement>().preferredHeight = 80;
+                return;
+            }
+            if (dados.habilidades == null || dados.habilidades.Count == 0)
+            {
+                TextMeshProUGUI vazio = Texto(lista, "Ainda não há respostas registradas. Os dados aparecem conforme os alunos jogam.", 22, COR_SUAVE, TextAlignmentOptions.Center);
+                vazio.gameObject.AddComponent<LayoutElement>().preferredHeight = 80;
+                return;
+            }
+            foreach (var h in dados.habilidades) LinhaHabilidade(lista, h);
+        });
+    }
+
+    private void LinhaHabilidade(Transform lista, ServicoNuvem.DtoHabilidadeRelatorio h)
+    {
+        Image card = Caixa(lista, "Hab_" + h.codigo, COR_CARD);
+        card.gameObject.AddComponent<LayoutElement>().preferredHeight = 118;
+        Color corComp = h.componente == "Matemática" ? COR_MATH : COR_PORT;
+        Color corTaxa = h.taxa >= 80 ? Hex("16A34A") : h.taxa >= 60 ? Hex("CA8A04") : Hex("DC2626");
+
+        Image faixa = Caixa(card.transform, "Faixa", corComp, false);
+        Posicionar(faixa.rectTransform, new Vector2(0, 0), new Vector2(0, 1), Vector2.zero, new Vector2(8, 0));
+
+        TextMeshProUGUI cod = Texto(card.transform, $"<b>{h.codigo}</b>\n<size=15><color=#64748B>{h.componente}\n{h.ano} ano</color></size>", 22, COR_TITULO, TextAlignmentOptions.MidlineLeft);
+        Posicionar(cod.rectTransform, new Vector2(0, 0), new Vector2(0, 1), new Vector2(24, 8), new Vector2(200, -8));
+
+        TextMeshProUGUI desc = Texto(card.transform, $"<b>{h.resumo}</b>\n<size=15><color=#64748B>{h.descricao}</color></size>", 19, COR_TEXTO, TextAlignmentOptions.MidlineLeft);
+        desc.enableAutoSizing = true;
+        desc.fontSizeMin = 12;
+        desc.fontSizeMax = 19;
+        Posicionar(desc.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(210, 8), new Vector2(-640, -8));
+
+        Image barra = Caixa(card.transform, "Barra", COR_VAZIO, true, spriteRedondoPequeno);
+        Posicionar(barra.rectTransform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-620, 2), new Vector2(-400, 18));
+        Image preench = Caixa(barra.transform, "Preenchimento", corTaxa, true, spriteRedondoPequeno);
+        Posicionar(preench.rectTransform, Vector2.zero, new Vector2(Mathf.Clamp01(h.taxa / 100f), 1), Vector2.zero, Vector2.zero);
+        TextMeshProUGUI taxa = Texto(card.transform, $"<b>{h.taxa}%</b> <size=15><color=#64748B>({h.acertos} de {h.respostas} · {h.alunosAvaliados} aluno(s))</color></size>", 22, corTaxa, TextAlignmentOptions.MidlineLeft);
+        Posicionar(taxa.rectTransform, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-620, -44), new Vector2(-380, -2));
+
+        string nomes = h.alunosAtencao != null && h.alunosAtencao.Count > 0 ? string.Join(", ", h.alunosAtencao) : "<color=#16A34A>ninguém</color>";
+        TextMeshProUGUI atencao = Texto(card.transform, $"<size=15><color=#B91C1C><b>Precisam de atenção:</b></color></size>\n{nomes}", 17, COR_TEXTO, TextAlignmentOptions.MidlineLeft);
+        atencao.enableAutoSizing = true;
+        atencao.fontSizeMin = 11;
+        atencao.fontSizeMax = 17;
+        Posicionar(atencao.rectTransform, new Vector2(1, 0), new Vector2(1, 1), new Vector2(-370, 8), new Vector2(-16, -8));
     }
 
     // =====================================================================

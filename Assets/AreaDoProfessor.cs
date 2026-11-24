@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,10 +17,18 @@ public class AreaDoProfessor : MonoBehaviour
     public static string NomeProfessorLogado = "Professor(a)";
 
     // Chaves de Credenciais
+    // Versões antigas tinham um acesso fixo em cada computador ("professor" / "1234").
+    // Ele não existe mais: estas chaves só são apagadas ao iniciar.
     private const string KEY_USER = "Config_Prof_User";
     private const string KEY_PASS = "Config_Prof_Pass";
-    private const string DEFAULT_USER = "professor";
-    private const string DEFAULT_PASS = "1234";
+
+    // Login usado com sucesso (com internet) neste computador, guardado só como hash, para funcionar sem internet
+    private const string PREFIXO_LOGIN_OFFLINE = "ProfLoginOffline_";
+    private const int ITERACOES_HASH_OFFLINE = 20000;
+
+    // A sessão do professor termina sozinha depois deste tempo sem nenhuma tela do professor aberta
+    private const float MINUTOS_SESSAO_FORA_DAS_TELAS = 5f;
+    private float ultimaAtividadeProfessor;
 
     [Header("Recursos Visuais")]
     public TMP_FontAsset fontProf;
@@ -131,6 +140,8 @@ public class AreaDoProfessor : MonoBehaviour
 
     void Start()
     {
+        PlayerPrefs.DeleteKey(KEY_USER);
+        PlayerPrefs.DeleteKey(KEY_PASS);
         ConstruirModalLogin();
         // O painel antigo (ConstruirModalDashboard) lia só os dados salvos neste computador.
         painelNuvem = gameObject.AddComponent<PainelProfessorNuvem>();
@@ -155,6 +166,37 @@ public class AreaDoProfessor : MonoBehaviour
 
         // Atualiza visibilidade dos botões do professor (Lobby e Gameplay)
         AtualizarBotoesAcesso();
+
+        // Professor que esqueceu de encerrar: a sessão (gabarito, auto-completar, fases liberadas)
+        // termina sozinha depois de alguns minutos com todas as telas do professor fechadas.
+        if (SessaoProfessorAtiva)
+        {
+            if (AlgumaTelaDoProfessorAberta()) ultimaAtividadeProfessor = Time.unscaledTime;
+            else if (Time.unscaledTime - ultimaAtividadeProfessor > MINUTOS_SESSAO_FORA_DAS_TELAS * 60f)
+            {
+                Debug.Log("[Professor] Sessão encerrada automaticamente (telas do professor fechadas há alguns minutos).");
+                EncerrarSessao();
+            }
+        }
+    }
+
+    private bool AlgumaTelaDoProfessorAberta()
+    {
+        return (modalLogin != null && modalLogin.activeSelf) ||
+               (modalDashboard != null && modalDashboard.activeSelf) ||
+               (painelNuvem != null && painelNuvem.Aberto) ||
+               (modalResolucaoGameplay != null && modalResolucaoGameplay.activeSelf) ||
+               (modalAlterarSenha != null && modalAlterarSenha.activeSelf);
+    }
+
+    /// <summary>Chamado quando outro aluno é escolhido: a sessão do professor não passa para o aluno.</summary>
+    public static void EncerrarSessaoAoTrocarAluno()
+    {
+        if (SessaoProfessorAtiva && Instance != null)
+        {
+            Debug.Log("[Professor] Sessão encerrada porque outro aluno foi escolhido.");
+            Instance.EncerrarSessao();
+        }
     }
 
     private void CarregarRecursos()
@@ -255,10 +297,10 @@ public class AreaDoProfessor : MonoBehaviour
         tmpHeader.color = new Color(0.2f, 0.12f, 0.05f, 1f);
 
         // Campo Usuário
-        GameObject goUser = CriarCampoInput(janela.transform, "InputUsuario", new Vector2(0f, -170f), new Vector2(460f, 56f), "Usuário (ex: prof.anna ou professor)", false, out inputLoginUser);
+        GameObject goUser = CriarCampoInput(janela.transform, "InputUsuario", new Vector2(0f, -170f), new Vector2(460f, 56f), "Usuário (ex: prof.anna ou coordenacao)", false, out inputLoginUser);
 
         // Campo Senha
-        GameObject goPass = CriarCampoInput(janela.transform, "InputSenha", new Vector2(0f, -245f), new Vector2(460f, 56f), "Senha (ex: 1234)", true, out inputLoginPass);
+        GameObject goPass = CriarCampoInput(janela.transform, "InputSenha", new Vector2(0f, -245f), new Vector2(460f, 56f), "Senha", true, out inputLoginPass);
 
         // Feedback de Erro
         GameObject goFeed = new GameObject("FeedbackLogin", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
@@ -291,7 +333,7 @@ public class AreaDoProfessor : MonoBehaviour
         rtDica.sizeDelta = new Vector2(600f, 40f);
         TextMeshProUGUI tmpDica = goDica.GetComponent<TextMeshProUGUI>();
         if (fontJogo != null) tmpDica.font = fontJogo;
-        tmpDica.text = "<size=17><color=#795548>Padrão inicial: usuário <b>professor</b> | senha <b>1234</b></color></size>";
+        tmpDica.text = "<size=17><color=#795548>Professor: login da sua sala  |  Coordenação: usuário <b>coordenacao</b></color></size>";
         tmpDica.alignment = TextAlignmentOptions.Center;
 
         modalLogin.SetActive(false);
@@ -2161,6 +2203,11 @@ public class AreaDoProfessor : MonoBehaviour
     public void FecharAreaDoProfessor()
     {
         TocarSomClique();
+        FecharTelasDoProfessor();
+    }
+
+    private void FecharTelasDoProfessor()
+    {
         if (modalLogin != null) modalLogin.SetActive(false);
         if (modalDashboard != null) modalDashboard.SetActive(false);
         if (painelNuvem != null) painelNuvem.Fechar();
@@ -2171,14 +2218,20 @@ public class AreaDoProfessor : MonoBehaviour
     public void EncerrarSessaoProfessor()
     {
         TocarSomClique();
+        EncerrarSessao();
+    }
+
+    private void EncerrarSessao()
+    {
         SessaoProfessorAtiva = false;
+        abrirResolucaoAposLogin = false;
 
         GerenciadorFases gf = FindFirstObjectByType<GerenciadorFases>();
         if (gf != null) gf.ConfigurarTodosBotoes();
         Action action = FindFirstObjectByType<Action>();
         if (action != null) action.VerificarDesbloqueios();
 
-        FecharAreaDoProfessor();
+        FecharTelasDoProfessor();
     }
 
     // =========================================================
@@ -2200,67 +2253,145 @@ public class AreaDoProfessor : MonoBehaviour
             return;
         }
 
-        string usuarioCorreto = PlayerPrefs.GetString(KEY_USER, DEFAULT_USER).Trim();
-        string senhaCorreta = PlayerPrefs.GetString(KEY_PASS, DEFAULT_PASS).Trim();
-
-        bool isMasterLocal = string.Equals(usuarioDigitado, usuarioCorreto, StringComparison.OrdinalIgnoreCase) &&
-                             string.Equals(senhaDigitada, senhaCorreta);
-
-        // 1. Login local padrão de administrador geral
-        if (isMasterLocal)
+        // Não existe mais acesso fixo neste computador (antes "professor / 1234" abria tudo, em qualquer escola).
+        // Todo login é conferido no servidor: professores de sala e a coordenação (usuário "coordenacao",
+        // senha definida no painel de administração). Sem internet, vale só um login que já deu certo
+        // com internet neste computador (guardado como hash).
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        if (sn == null)
         {
-            EfetivarLoginSucesso("", "Todas as Salas", "Administrador Pedagógico");
+            if (!TentarLoginOffline(usuarioDigitado, senhaDigitada))
+                MostrarErroLogin("Sem conexão com o servidor.");
             return;
         }
 
-        // 2. Autenticação remota com o Servidor Cloud
-        ServicoNuvem sn = ServicoNuvem.Instancia;
-        if (sn != null)
+        if (textoFeedbackLogin != null)
         {
-            if (textoFeedbackLogin != null)
+            textoFeedbackLogin.color = new Color(0.2f, 0.4f, 0.8f, 1f);
+            textoFeedbackLogin.text = "Verificando credenciais no servidor...";
+        }
+
+        sn.AutenticarProfessor(usuarioDigitado, senhaDigitada, (sucesso, resp) =>
+        {
+            if (sucesso && resp != null && resp.sucesso)
             {
-                textoFeedbackLogin.color = new Color(0.2f, 0.4f, 0.8f, 1f);
-                textoFeedbackLogin.text = "Verificando credenciais no servidor...";
+                string nomeProf = !string.IsNullOrEmpty(resp.nome) ? resp.nome : "Professor";
+                string nomeTurma = !string.IsNullOrEmpty(resp.turmaNome) ? resp.turmaNome : "Sala Vinculada";
+                GuardarLoginOffline(usuarioDigitado, senhaDigitada, resp.turmaId, nomeTurma, nomeProf);
+                EfetivarLoginSucesso(resp.turmaId, nomeTurma, nomeProf);
+                return;
             }
 
-            sn.AutenticarProfessor(usuarioDigitado, senhaDigitada, (sucesso, resp) =>
-            {
-                if (sucesso && resp != null && resp.sucesso)
-                {
-                    string nomeProf = !string.IsNullOrEmpty(resp.nome) ? resp.nome : "Professor";
-                    string nomeTurma = !string.IsNullOrEmpty(resp.turmaNome) ? resp.turmaNome : "Sala Vinculada";
-                    EfetivarLoginSucesso(resp.turmaId, nomeTurma, nomeProf);
-                }
-                else
-                {
-                    // A senha do professor fica SÓ no servidor. Antes havia um "plano B" local que aceitava
-                    // a senha 1234 (ou o nome do professor) e abria a sala errada; ele foi removido.
-                    TocarSomErro();
-                    if (textoFeedbackLogin != null)
-                    {
-                        textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
-                        string motivo = (resp != null && !string.IsNullOrEmpty(resp.erro)) ? resp.erro : "Usuário ou senha incorretos! Tente novamente.";
-                        if (resp != null && resp.tipo == "conexao")
-                            motivo += $"\n(Sem internet, use o acesso geral da escola: {DEFAULT_USER})";
-                        textoFeedbackLogin.text = "Atenção: " + motivo;
-                    }
-                }
-            });
-            return;
-        }
+            bool semConexao = resp == null || resp.tipo == "conexao";
+            if (semConexao && TentarLoginOffline(usuarioDigitado, senhaDigitada)) return;
 
+            // O servidor recusou a senha que estava guardada aqui (ela foi trocada): deixa de valer sem internet também
+            if (!semConexao && LoginOfflineConfere(usuarioDigitado, senhaDigitada, out _))
+                PlayerPrefs.DeleteKey(ChaveLoginOffline(usuarioDigitado));
+
+            string motivo = (resp != null && !string.IsNullOrEmpty(resp.erro)) ? resp.erro : "Usuário ou senha incorretos! Tente novamente.";
+            if (semConexao)
+                motivo += "\n(Sem internet, só entra quem já fez login com internet neste computador.)";
+            MostrarErroLogin(motivo);
+        });
+    }
+
+    private void MostrarErroLogin(string motivo)
+    {
         TocarSomErro();
         if (textoFeedbackLogin != null)
         {
             textoFeedbackLogin.color = new Color(0.85f, 0.15f, 0.15f, 1f);
-            textoFeedbackLogin.text = "Atenção: Usuário ou senha incorretos! Tente novamente.";
+            textoFeedbackLogin.text = "Atenção: " + motivo;
         }
+    }
+
+    // ---------- Login sem internet (somente de quem já entrou com internet neste computador) ----------
+
+    [Serializable]
+    private class LoginOffline
+    {
+        public string escola;
+        public int iteracoes;
+        public string sal;
+        public string hash;
+        public string turmaId;
+        public string turmaNome;
+        public string nome;
+    }
+
+    private static string ChaveLoginOffline(string usuario) => PREFIXO_LOGIN_OFFLINE + (usuario ?? "").Trim().ToLowerInvariant();
+
+    private static string TokenEscolaAtual() => ServicoNuvem.Instancia != null ? (ServicoNuvem.Instancia.tokenEscola ?? "") : "";
+
+    private static byte[] DerivarHash(string senha, byte[] sal, int iteracoes)
+    {
+        using (var pbkdf2 = new Rfc2898DeriveBytes(senha, sal, iteracoes, HashAlgorithmName.SHA256))
+            return pbkdf2.GetBytes(32);
+    }
+
+    private static void GuardarLoginOffline(string usuario, string senha, string turmaId, string turmaNome, string nome)
+    {
+        try
+        {
+            byte[] sal = new byte[16];
+            using (var rng = RandomNumberGenerator.Create()) rng.GetBytes(sal);
+            var dados = new LoginOffline
+            {
+                escola = TokenEscolaAtual(),
+                iteracoes = ITERACOES_HASH_OFFLINE,
+                sal = Convert.ToBase64String(sal),
+                hash = Convert.ToBase64String(DerivarHash(senha, sal, ITERACOES_HASH_OFFLINE)),
+                turmaId = turmaId ?? "",
+                turmaNome = turmaNome ?? "",
+                nome = nome ?? ""
+            };
+            PlayerPrefs.SetString(ChaveLoginOffline(usuario), JsonUtility.ToJson(dados));
+            PlayerPrefs.Save();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("[Professor] Não foi possível guardar o login para uso sem internet: " + ex.Message);
+        }
+    }
+
+    private static bool LoginOfflineConfere(string usuario, string senha, out LoginOffline dados)
+    {
+        dados = null;
+        string json = PlayerPrefs.GetString(ChaveLoginOffline(usuario), "");
+        if (string.IsNullOrEmpty(json)) return false;
+        try
+        {
+            dados = JsonUtility.FromJson<LoginOffline>(json);
+            if (dados == null || dados.iteracoes < 1 || string.IsNullOrEmpty(dados.sal) || string.IsNullOrEmpty(dados.hash)) return false;
+            if (!string.Equals(dados.escola ?? "", TokenEscolaAtual(), StringComparison.OrdinalIgnoreCase)) return false;
+
+            byte[] esperado = Convert.FromBase64String(dados.hash);
+            byte[] calculado = DerivarHash(senha, Convert.FromBase64String(dados.sal), dados.iteracoes);
+            if (esperado.Length != calculado.Length) return false;
+            int diferenca = 0;
+            for (int i = 0; i < esperado.Length; i++) diferenca |= esperado[i] ^ calculado[i];
+            return diferenca == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private bool TentarLoginOffline(string usuario, string senha)
+    {
+        if (!LoginOfflineConfere(usuario, senha, out LoginOffline dados)) return false;
+        Debug.Log("[Professor] Login sem internet (último login com internet neste computador).");
+        EfetivarLoginSucesso(dados.turmaId, string.IsNullOrEmpty(dados.turmaNome) ? "Todas as Salas" : dados.turmaNome, dados.nome);
+        return true;
     }
 
     private void EfetivarLoginSucesso(string turmaId, string turmaNome, string nomeProfessor)
     {
         TocarSomClique();
         SessaoProfessorAtiva = true;
+        ultimaAtividadeProfessor = Time.unscaledTime;
         TurmaRestritaId = turmaId ?? "";
         TurmaRestritaNome = turmaNome ?? "Todas as Salas";
         NomeProfessorLogado = nomeProfessor ?? "Professor(a)";
@@ -2295,16 +2426,7 @@ public class AreaDoProfessor : MonoBehaviour
         }
     }
 
-    /// <summary>Login feito com o acesso geral DESTE computador (não pelo servidor).</summary>
-    public bool SessaoLocalGeral => SessaoProfessorAtiva && string.IsNullOrEmpty(TurmaRestritaId) && NomeProfessorLogado == "Administrador Pedagógico";
-
     public void TocarSomCliquePublico() => TocarSomClique();
-
-    public void AbrirAlterarSenhaGeral()
-    {
-        AbrirModalAlterarSenha();
-        if (modalAlterarSenha != null) modalAlterarSenha.transform.SetAsLastSibling();
-    }
 
     private void AbrirModalAlterarSenha()
     {
@@ -2323,45 +2445,11 @@ public class AreaDoProfessor : MonoBehaviour
 
     private void OnClickSalvarNovaSenha()
     {
-        string nova = inputNovaSenha != null ? inputNovaSenha.text.Trim() : "";
-        string confirma = inputConfirmaSenha != null ? inputConfirmaSenha.text.Trim() : "";
-
-        if (string.IsNullOrEmpty(nova))
-        {
-            if (textoFeedbackSenha != null) textoFeedbackSenha.text = "Atenção: A senha não pode ficar em branco.";
-            TocarSomErro();
-            return;
-        }
-
-        if (nova.Length < 3)
-        {
-            if (textoFeedbackSenha != null) textoFeedbackSenha.text = "Atenção: A senha deve ter ao menos 3 caracteres.";
-            TocarSomErro();
-            return;
-        }
-
-        if (nova != confirma)
-        {
-            if (textoFeedbackSenha != null) textoFeedbackSenha.text = "Atenção: A confirmação não coincide com a nova senha.";
-            TocarSomErro();
-            return;
-        }
-
-        PlayerPrefs.SetString(KEY_PASS, nova);
-        PlayerPrefs.Save();
-
-        TocarSomClique();
+        // Janela do painel antigo. A senha não é mais guardada neste computador:
+        // a da coordenação é definida no painel de administração e a dos professores, no cadastro da sala.
         if (textoFeedbackSenha != null)
-        {
-            textoFeedbackSenha.color = new Color(0.15f, 0.55f, 0.2f, 1f);
-            textoFeedbackSenha.text = "Senha do professor alterada com sucesso!";
-        }
-        if (textoFeedbackAcoes != null)
-        {
-            textoFeedbackAcoes.text = "Senha de acesso atualizada!";
-        }
-
-        Invoke(nameof(FecharModalAlterarSenha), 1f);
+            textoFeedbackSenha.text = "A senha agora é definida no painel de administração da escola.";
+        TocarSomErro();
     }
 
     // =========================================================
@@ -2393,14 +2481,27 @@ public class AreaDoProfessor : MonoBehaviour
         {
             sb.AppendLine("<b>[PROBLEMA DE MATEMÁTICA]</b>");
             sb.AppendLine($"- <b>Enunciado:</b> <size=22><color=#007700>{gm.UltimaPerguntaMatematica}</color></size>");
-            sb.AppendLine($"- <b>Resposta Correta:</b> <size=24><color=#B71C1C>{gm.UltimaRespostaMatematica}</color></size>");
+            string resposta = string.IsNullOrEmpty(gm.UltimaRespostaMatematicaTexto) ? gm.UltimaRespostaMatematica.ToString() : gm.UltimaRespostaMatematicaTexto;
+            sb.AppendLine($"- <b>Resposta Correta:</b> <size=24><color=#B71C1C>{resposta}</color></size>");
             sb.AppendLine();
             sb.AppendLine("<b>[RESOLUÇÃO PASSO A PASSO]</b>");
             sb.AppendLine(gm.UltimoPassoAPassoMatematica);
         }
         else
         {
-            if (nivelID == 2 && !gm.ConteudoAlfabetizacaoAtivo)
+            if (gm.PerguntaInterpretacaoAtiva)
+            {
+                var it = gm.InterpretacaoAtual;
+                sb.AppendLine("<b>[LEITURA E INTERPRETAÇÃO - 5º ANO]</b>");
+                sb.AppendLine($"- <b>Texto:</b> <size=21>\"{it.texto}\"</size>");
+                sb.AppendLine($"- <b>Pergunta:</b> {it.pergunta}");
+                sb.AppendLine($"- <b>Resposta correta:</b> <size=23><color=#007700>{it.correta}</color></size>");
+                sb.AppendLine($"- <b>Distratores:</b> {it.errada1}, {it.errada2}");
+                sb.AppendLine();
+                sb.AppendLine("<b>[JUSTIFICATIVA PEDAGÓGICA]</b>");
+                sb.AppendLine("A resposta está explícita no texto: o aluno localiza a informação e relaciona causa, lugar, tempo ou sequência.");
+            }
+            else if (nivelID == 2 && !gm.ConteudoAlfabetizacaoAtivo)
             {
                 var frase = gm.FraseDificilAtual;
                 sb.AppendLine("<b>[DESAFIO GRAMATICAL E ORTOGRÁFICO]</b>");
@@ -2419,7 +2520,11 @@ public class AreaDoProfessor : MonoBehaviour
                 sb.AppendLine();
                 sb.AppendLine("<b>[REGRA ORTOGRÁFICA]</b>");
                 if (gm.ConteudoAlfabetizacaoAtivo)
-                    sb.AppendLine("- Conteúdo de 1º e 2º ano: completar a <b>vogal</b> (A, E, I, O, U) que falta na palavra.");
+                {
+                    string tipo = gm.TipoDesafioAlfabetizacao;
+                    string oQue = tipo == "silaba" ? "a <b>sílaba</b> que falta" : tipo == "consoante" ? "a <b>consoante</b> que falta (troca de letras parecidas: B/P, D/T, F/V, M/N...)" : "a <b>vogal</b> (A, E, I, O, U) que falta";
+                    sb.AppendLine($"- Conteúdo de {(gm.AnoEscolar == 2 ? "2º" : "1º")} ano: completar {oQue} na palavra.");
+                }
                 else if (gm.PalavraCompleta.Contains("SS"))
                     sb.AppendLine("- Usa-se <b>SS</b> entre vogais para reproduzir o som de /s/. Nunca se inicia palavra com SS.");
                 else if (gm.PalavraCompleta.Contains("CH"))

@@ -75,7 +75,6 @@ public class GerenciadorPerfis : MonoBehaviour
     private GameObject modalSeletorSala;
     private TextMeshProUGUI textoTituloSeletorSala;
     private Transform containerCardsSalas;
-    private TMP_InputField inputNovaSala;
     private TextMeshProUGUI textoFeedbackSeletorSala;
     public enum ModoSeletorSala { FiltrarLista, DefinirCadastro, MudarSalaAluno }
     private ModoSeletorSala modoSeletorAtual = ModoSeletorSala.FiltrarLista;
@@ -432,6 +431,12 @@ public class GerenciadorPerfis : MonoBehaviour
         return ConteudoAlfabetizacao.SalaDeAlfabetizacao(ObterSalaConhecidaDoAluno(PerfilAtivo));
     }
 
+    /// <summary>Ano escolar do aluno que está jogando, lido do nome da sala (0 = desconhecido).</summary>
+    public static int AnoEscolarDoAlunoAtivo()
+    {
+        return ConteudoAlfabetizacao.AnoDaSala(ObterSalaConhecidaDoAluno(PerfilAtivo));
+    }
+
     /// <param name="enviarParaNuvem">false quando o aluno acabou de ser criado (o cadastro na nuvem já leva a sala).</param>
     public static void DefinirSalaDoAluno(string nomeAluno, string nomeSala, bool enviarParaNuvem = true)
     {
@@ -459,10 +464,22 @@ public class GerenciadorPerfis : MonoBehaviour
         List<string> perfis = ObterListaPerfis();
         if (!perfis.Contains(trimmed)) return;
 
+        // Trocar de aluno encerra a sessão do professor (gabarito e fases liberadas não passam para o aluno)
+        if (!string.Equals(_perfilAtivo, trimmed, StringComparison.Ordinal)) AreaDoProfessor.EncerrarSessaoAoTrocarAluno();
+
         _perfilAtivo = trimmed;
         PlayerPrefs.SetString(KEY_PERFIL_ATIVO, _perfilAtivo);
         PlayerPrefs.Save();
 
+        OnPerfilAlterado?.Invoke();
+
+        // Traz do servidor as fases que o aluno já concluiu em outros computadores
+        if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.RestaurarProgressoDoAluno(trimmed);
+    }
+
+    /// <summary>Atualiza as telas depois que o progresso do aluno ativo chegou do servidor.</summary>
+    public static void NotificarProgressoAtualizado()
+    {
         OnPerfilAlterado?.Invoke();
     }
 
@@ -783,12 +800,56 @@ public class GerenciadorPerfis : MonoBehaviour
 
         CriarBadgeLobby(rootLobby);
         CriarTextoVersao(rootLobby);
+        CriarBotaoAlbum(rootLobby);
         CriarModalPerfis(rootLobby);
 
         OnPerfilAlterado -= AtualizarUICompleta;
         OnPerfilAlterado += AtualizarUICompleta;
 
         AtualizarUICompleta();
+    }
+
+    // Botão do "Álbum das Letrinhas" (recompensa) no canto inferior direito do Lobby.
+    private void CriarBotaoAlbum(Transform root)
+    {
+        if (root.Find("BotaoAlbumLetrinhas") != null) return;
+
+        Image fundo = InterfaceUtil.Caixa(root, "BotaoAlbumLetrinhas", InterfaceUtil.Hex("#EA580C"));
+        fundo.raycastTarget = true;
+        RectTransform rt = fundo.rectTransform;
+        rt.anchorMin = rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.anchoredPosition = new Vector2(-28f, 26f);
+        rt.sizeDelta = new Vector2(430f, 104f);
+        Outline contorno = fundo.gameObject.AddComponent<Outline>();
+        contorno.effectColor = new Color(0.35f, 0.12f, 0f, 0.9f);
+        contorno.effectDistance = new Vector2(3f, -3f);
+        Button b = fundo.gameObject.AddComponent<Button>();
+        b.targetGraphic = fundo;
+        b.onClick.AddListener(() =>
+        {
+            Action a = FindFirstObjectByType<Action>();
+            if (a != null) a.TocarSomClique();
+            TelaLetrinhas.AbrirAlbum();
+        });
+
+        Image estrela = InterfaceUtil.Estrela(fundo.transform, InterfaceUtil.Hex("#FDE047"), 76f);
+        RectTransform rtE = estrela.rectTransform;
+        rtE.anchorMin = rtE.anchorMax = new Vector2(0f, 0.5f);
+        rtE.pivot = new Vector2(0f, 0.5f);
+        rtE.anchoredPosition = new Vector2(14f, 0f);
+
+        TextMeshProUGUI titulo = InterfaceUtil.Texto(fundo.transform, "Álbum das Letrinhas", 32, Color.white, TextAlignmentOptions.Left, true);
+        InterfaceUtil.Posicionar(titulo.rectTransform, new Vector2(0, 0.45f), new Vector2(1, 1), new Vector2(100, 0), new Vector2(-12, -6));
+        TextMeshProUGUI resumo = InterfaceUtil.Texto(fundo.transform, "", 22, InterfaceUtil.Hex("#FFF7ED"), TextAlignmentOptions.Left);
+        resumo.fontStyle = FontStyles.Bold;
+        resumo.textWrappingMode = TextWrappingModes.NoWrap;
+        resumo.enableAutoSizing = true;
+        resumo.fontSizeMin = 14;
+        resumo.fontSizeMax = 22;
+        InterfaceUtil.Posicionar(resumo.rectTransform, new Vector2(0, 0), new Vector2(1, 0.5f), new Vector2(100, 8), new Vector2(-12, 0));
+
+        fundo.gameObject.AddComponent<ResumoAlbumLobby>().texto = resumo;
     }
 
     // Texto pequeno com a versão do jogo, no canto inferior esquerdo do Lobby.
@@ -1608,10 +1669,39 @@ public class GerenciadorPerfis : MonoBehaviour
             textoBadgeAluno.text = $"Aluno: <b>{PerfilAtivo}</b>  |  <color=#01579B>Sala: <b>{sala}</b></color>";
         }
 
+        // Foto do crachá do Lobby: o personagem do aluno (ou o boneco padrão)
+        if (badgeLobby != null)
+        {
+            Transform t = badgeLobby.transform.Find("IconeAluno");
+            Image icone = t != null ? t.GetComponent<Image>() : null;
+            if (icone != null)
+            {
+                icone.sprite = spriteAvatarKid;
+                icone.color = spriteAvatarKid != null ? Color.white : new Color(0.9f, 0.7f, 0.3f, 1f);
+                AplicarFotoDoAluno(icone, PerfilAtivo);
+            }
+        }
+
         if (modalPerfis != null && modalPerfis.activeSelf)
         {
             AtualizarListaCards();
         }
+    }
+
+    /// <summary>Troca o ícone pelo personagem de perfil do aluno, se ele já resgatou um.</summary>
+    private static void AplicarFotoDoAluno(Image img, string nomeAluno)
+    {
+        ServicoNuvem sn = ServicoNuvem.Instancia;
+        string codigo = sn != null ? sn.ObterPersonagemDoAluno(nomeAluno) : "";
+        if (string.IsNullOrEmpty(codigo) || img == null) return;
+        img.preserveAspect = true;
+        ImagensRemotas.ImagemDoPersonagem(codigo, s =>
+        {
+            if (s == null || img == null) return;
+            if (img.transform.parent == Instance?.badgeLobby?.transform && nomeAluno != PerfilAtivo) return; // aluno mudou
+            img.sprite = s;
+            img.color = Color.white;
+        });
     }
 
     public void AtualizarUICompleta()
@@ -1755,6 +1845,7 @@ public class GerenciadorPerfis : MonoBehaviour
         Image imgIcon = icon.GetComponent<Image>();
         if (spriteAvatarKid != null) imgIcon.sprite = spriteAvatarKid;
         imgIcon.color = (spriteAvatarKid != null) ? Color.white : new Color(0.95f, 0.75f, 0.35f, 1f);
+        AplicarFotoDoAluno(imgIcon, nome); // quem já lê pouco reconhece o próprio personagem na lista
 
         // Container de Textos do Aluno (Nome e Progresso separados para evitar qualquer sobreposicao)
         GameObject goInfo = new GameObject("Info", typeof(RectTransform));
@@ -2398,119 +2489,26 @@ public class GerenciadorPerfis : MonoBehaviour
 
         containerCardsSalas = content.transform;
 
-        // Rodapé com criação de nova sala
-        GameObject rodape = new GameObject("RodapeNovaSala", typeof(RectTransform));
-        rodape.transform.SetParent(janela.transform, false);
-        RectTransform rtRodape = rodape.GetComponent<RectTransform>();
-        rtRodape.anchorMin = new Vector2(0.5f, 0f);
-        rtRodape.anchorMax = new Vector2(0.5f, 0f);
-        rtRodape.pivot = new Vector2(0.5f, 0f);
-        rtRodape.anchoredPosition = new Vector2(0f, 24f);
-        rtRodape.sizeDelta = new Vector2(890f, 56f);
-
-        // Input de Nova Sala
-        GameObject goInput = new GameObject("InputNovaSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
-        goInput.transform.SetParent(rodape.transform, false);
-        RectTransform rtInput = goInput.GetComponent<RectTransform>();
-        rtInput.anchorMin = new Vector2(0f, 0.5f);
-        rtInput.anchorMax = new Vector2(0f, 0.5f);
-        rtInput.pivot = new Vector2(0f, 0.5f);
-        rtInput.anchoredPosition = new Vector2(0f, 0f);
-        rtInput.sizeDelta = new Vector2(580f, 50f);
-
-        Image imgInput = goInput.GetComponent<Image>();
-        if (spriteBarraPesquisa != null)
-        {
-            imgInput.sprite = spriteBarraPesquisa;
-            imgInput.type = Image.Type.Sliced;
-            imgInput.color = Color.white;
-        }
-        else
-        {
-            imgInput.color = Color.white;
-        }
-
-        inputNovaSala = goInput.GetComponent<TMP_InputField>();
-
-        GameObject textArea = new GameObject("TextArea", typeof(RectTransform), typeof(RectMask2D));
-        textArea.transform.SetParent(goInput.transform, false);
-        RectTransform rtArea = textArea.GetComponent<RectTransform>();
-        rtArea.anchorMin = Vector2.zero;
-        rtArea.anchorMax = Vector2.one;
-        rtArea.offsetMin = new Vector2(16f, 4f);
-        rtArea.offsetMax = new Vector2(-16f, -4f);
-
-        GameObject goPh = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        goPh.transform.SetParent(textArea.transform, false);
-        RectTransform rtPh = goPh.GetComponent<RectTransform>();
-        rtPh.anchorMin = Vector2.zero;
-        rtPh.anchorMax = Vector2.one;
-        rtPh.offsetMin = Vector2.zero;
-        rtPh.offsetMax = Vector2.zero;
-        TextMeshProUGUI tmpPh = goPh.GetComponent<TextMeshProUGUI>();
-        if (fontJogo != null) tmpPh.font = fontJogo;
-        tmpPh.text = "Cadastrar nova sala (ex: 4º Ano B)...";
-        tmpPh.fontSize = 20;
-        tmpPh.fontStyle = FontStyles.Italic;
-        tmpPh.alignment = TextAlignmentOptions.MidlineLeft;
-        tmpPh.color = new Color(0.55f, 0.45f, 0.35f, 0.75f);
-
-        GameObject goTxt = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        goTxt.transform.SetParent(textArea.transform, false);
-        RectTransform rtT = goTxt.GetComponent<RectTransform>();
-        rtT.anchorMin = Vector2.zero;
-        rtT.anchorMax = Vector2.one;
-        rtT.offsetMin = Vector2.zero;
-        rtT.offsetMax = Vector2.zero;
-        TextMeshProUGUI tmpT = goTxt.GetComponent<TextMeshProUGUI>();
-        if (fontJogo != null) tmpT.font = fontJogo;
-        tmpT.fontSize = 22;
-        tmpT.alignment = TextAlignmentOptions.MidlineLeft;
-        tmpT.color = new Color(0.18f, 0.11f, 0.04f, 1f);
-
-        inputNovaSala.textViewport = rtArea;
-        inputNovaSala.textComponent = tmpT;
-        inputNovaSala.placeholder = tmpPh;
-        inputNovaSala.characterLimit = 30;
-
-        // Botão Adicionar Sala
-        GameObject goBtnAdd = new GameObject("BtnAddSala", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
-        goBtnAdd.transform.SetParent(rodape.transform, false);
-        RectTransform rtBtnAdd = goBtnAdd.GetComponent<RectTransform>();
-        rtBtnAdd.anchorMin = new Vector2(1f, 0.5f);
-        rtBtnAdd.anchorMax = new Vector2(1f, 0.5f);
-        rtBtnAdd.pivot = new Vector2(1f, 0.5f);
-        rtBtnAdd.anchoredPosition = new Vector2(0f, 0f);
-        rtBtnAdd.sizeDelta = new Vector2(290f, 50f);
-
-        Image imgAdd = goBtnAdd.GetComponent<Image>();
-        imgAdd.color = new Color(0.18f, 0.72f, 0.35f, 1f);
-        if (spriteBtnJogar != null)
-        {
-            imgAdd.sprite = spriteBtnJogar;
-            imgAdd.type = Image.Type.Sliced;
-            imgAdd.color = Color.white;
-        }
-
-        Button btnAdd = goBtnAdd.GetComponent<Button>();
-        btnAdd.onClick.AddListener(OnClickAdicionarNovaSala);
-
-        GameObject goTxtAdd = new GameObject("TextoAdd", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        goTxtAdd.transform.SetParent(goBtnAdd.transform, false);
-        RectTransform rtTxtAdd = goTxtAdd.GetComponent<RectTransform>();
-        rtTxtAdd.anchorMin = Vector2.zero;
-        rtTxtAdd.anchorMax = Vector2.one;
-        rtTxtAdd.sizeDelta = Vector2.zero;
-        TextMeshProUGUI tmpAdd = goTxtAdd.GetComponent<TextMeshProUGUI>();
-        if (fontJogo != null) tmpAdd.font = fontJogo;
-        tmpAdd.text = "+ CRIAR SALA";
-        tmpAdd.fontSize = 20;
-        tmpAdd.fontStyle = FontStyles.Bold;
-        tmpAdd.alignment = TextAlignmentOptions.Center;
-        tmpAdd.color = Color.white;
+        // Rodapé: salas novas são cadastradas só pela administração (painel web). Aqui só se escolhe uma sala existente.
+        GameObject avisoSalas = new GameObject("AvisoSalasAdministracao", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        avisoSalas.transform.SetParent(janela.transform, false);
+        RectTransform rtAviso = avisoSalas.GetComponent<RectTransform>();
+        rtAviso.anchorMin = new Vector2(0.5f, 0f);
+        rtAviso.anchorMax = new Vector2(0.5f, 0f);
+        rtAviso.pivot = new Vector2(0.5f, 0f);
+        rtAviso.anchoredPosition = new Vector2(0f, 24f);
+        rtAviso.sizeDelta = new Vector2(890f, 56f);
+        TextMeshProUGUI tmpAviso = avisoSalas.GetComponent<TextMeshProUGUI>();
+        if (fontJogo != null) tmpAviso.font = fontJogo;
+        tmpAviso.text = "As salas são cadastradas pela administração da escola, no painel.";
+        tmpAviso.fontSize = 19;
+        tmpAviso.alignment = TextAlignmentOptions.Center;
+        tmpAviso.color = new Color(0.36f, 0.25f, 0.2f, 1f);
+        tmpAviso.raycastTarget = false;
 
         modalSeletorSala.SetActive(false);
     }
+
 
     public void AbrirModalSeletorSala(ModoSeletorSala modo, string aluno = "")
     {
@@ -2533,7 +2531,6 @@ public class GerenciadorPerfis : MonoBehaviour
                 textoTituloSeletorSala.text = $"<size=28><b>ALTERAR SALA DE {aluno.ToUpper()}</b></size>\n<size=17><color=#5D4037>Selecione a nova turma escolar para este estudante</color></size>";
         }
 
-        if (inputNovaSala != null) inputNovaSala.text = "";
         modalSeletorSala.SetActive(true);
         modalSeletorSala.transform.SetAsLastSibling();
         AtualizarCardsSalas();
@@ -2681,16 +2678,4 @@ public class GerenciadorPerfis : MonoBehaviour
         }
     }
 
-    private void OnClickAdicionarNovaSala()
-    {
-        if (inputNovaSala == null) return;
-        string nome = inputNovaSala.text.Trim();
-        if (string.IsNullOrEmpty(nome) || nome.Length < 2) return;
-
-        CadastrarNovaSala(nome);
-        // Envia a sala nova para o servidor (aparece no painel mesmo antes de ter alunos)
-        if (ServicoNuvem.Instancia != null) ServicoNuvem.Instancia.CadastrarSalaNuvem(nome);
-        inputNovaSala.text = "";
-        AtualizarCardsSalas();
-    }
 }

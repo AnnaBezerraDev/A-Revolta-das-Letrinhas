@@ -261,11 +261,17 @@ public class Action : MonoBehaviour
     {
         bool isProfessor = AreaDoProfessor.SessaoProfessorAtiva;
 
-        bool medioLiberadoPort = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Medio", 0) == 1;
-        bool dificilLiberadoPort = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Dificil", 0) == 1;
+        // Nível inicial pela série (lida do nome da sala): 4º ano já começa com o Médio liberado,
+        // 5º ano com o Médio e o Difícil. Assim o aluno mais velho não precisa vencer 30 fases fáceis antes.
+        int ano = GerenciadorPerfis.AnoEscolarDoAlunoAtivo();
+        bool medioPelaSerie = ano >= 4;
+        bool dificilPelaSerie = ano >= 5;
 
-        bool medioLiberadoMath = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Math", 0) == 1;
-        bool dificilLiberadoMath = isProfessor || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Math", 0) == 1;
+        bool medioLiberadoPort = isProfessor || medioPelaSerie || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Medio", 0) == 1;
+        bool dificilLiberadoPort = isProfessor || dificilPelaSerie || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Port", 0) == 1 || GerenciadorPerfis.GetInt("Desbloqueio_Dificil", 0) == 1;
+
+        bool medioLiberadoMath = isProfessor || medioPelaSerie || GerenciadorPerfis.GetInt("Desbloqueio_Medio_Math", 0) == 1;
+        bool dificilLiberadoMath = isProfessor || dificilPelaSerie || GerenciadorPerfis.GetInt("Desbloqueio_Dificil_Math", 0) == 1;
 
         AtualizarEstadoBotaoDificuldade(botaoMedio, medioLiberadoPort);
         AtualizarEstadoBotaoDificuldade(botaoDificil, dificilLiberadoPort);

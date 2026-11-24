@@ -87,6 +87,7 @@ public class ServicoNuvem : MonoBehaviour
     private const string OP_CRIAR_SALA = "criarSala";
     private const string OP_PROGRESSO = "progresso";
     private const string OP_PROGRESSO_LOTE = "progressoLote";
+    private const string OP_HABILIDADES = "habilidades";
 
     private enum ResultadoEnvio { Sucesso, Descartar, TentarDepois }
 
@@ -99,7 +100,69 @@ public class ServicoNuvem : MonoBehaviour
         public string sala;
         public DtoProgressoEnvio progresso;
         public List<DtoProgressoEnvio> lote = new List<DtoProgressoEnvio>();
+        public List<DtoHabilidadeItem> habilidades = new List<DtoHabilidadeItem>();
         public int tentativas;
+    }
+
+    /// <summary>Acertos e erros de uma habilidade da BNCC numa fase.</summary>
+    [System.Serializable]
+    public class DtoHabilidadeItem
+    {
+        public string codigo;
+        public int acertos;
+        public int erros;
+    }
+
+    [System.Serializable]
+    public class DtoHabilidadesEnvio
+    {
+        public string nomeAluno;
+        public List<DtoHabilidadeItem> itens;
+    }
+
+    // ===== Relatório por habilidade (Área do Professor) =====
+    [System.Serializable]
+    public class DtoHabilidadeRelatorio
+    {
+        public string codigo;
+        public string componente;
+        public string ano;
+        public string resumo;
+        public string descricao;
+        public int acertos;
+        public int erros;
+        public int respostas;
+        public int taxa;
+        public int alunosAvaliados;
+        public List<string> alunosAtencao;
+    }
+
+    [System.Serializable]
+    public class DtoRelatorioHabilidadesRoot
+    {
+        public List<DtoHabilidadeRelatorio> habilidades;
+    }
+
+    // ===== Personagens de perfil =====
+    [System.Serializable]
+    public class DtoPersonagemAluno
+    {
+        public string aluno;
+        public string codigo;
+    }
+
+    [System.Serializable]
+    public class DtoPersonagensRoot
+    {
+        public int trofeusNecessarios;
+        public List<DtoPersonagemAluno> personagens;
+    }
+
+    [System.Serializable]
+    private class DtoResgatarPersonagemEnvio
+    {
+        public string nomeAluno;
+        public string codigo;
     }
 
     [System.Serializable]
@@ -583,6 +646,12 @@ public class ServicoNuvem : MonoBehaviour
         GerenciadorPerfis.DefinirAlunosDaEscola(nomes);
         OnEscolaSincronizada?.Invoke();
 
+        // O aluno que está jogando recebe as fases concluídas em outros computadores
+        RestaurarProgressoDoAluno(GerenciadorPerfis.PerfilAtivo);
+
+        // Personagens de perfil da escola (foto de cada aluno e quais já têm dono)
+        AtualizarPersonagens();
+
         if (fila.Count > 0) StartCoroutine(ProcessarFilaCoroutine());
     }
 
@@ -735,6 +804,135 @@ public class ServicoNuvem : MonoBehaviour
     /// Envia ao servidor uma fase concluída com o desempenho REAL (vidas que sobraram e tempo gasto).
     /// Antes eram enviados sempre 3 estrelas, 1000 pontos e 0 erros, e o professor via dados irreais.
     /// </summary>
+    /// <summary>Acertos/erros por habilidade da BNCC de uma fase (vai pela fila: não se perde sem internet).</summary>
+    public void EnviarHabilidades(string nomeAluno, List<DtoHabilidadeItem> itens)
+    {
+        if (string.IsNullOrEmpty(nomeAluno) || itens == null || itens.Count == 0) return;
+        Enfileirar(new OperacaoNuvem { tipo = OP_HABILIDADES, token = tokenEscola, aluno = nomeAluno, habilidades = itens });
+    }
+
+    // ================= Personagens de perfil =================
+
+    private readonly Dictionary<string, string> personagemDoAluno = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> personagensOcupados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public int TrofeusParaPersonagem { get; private set; } = 2;
+    public event System.Action OnPersonagensAtualizados;
+
+    /// <summary>Personagem do aluno ("" se ainda não tem). Guardado também no PC para aparecer sem internet.</summary>
+    public string ObterPersonagemDoAluno(string nomeAluno)
+    {
+        if (string.IsNullOrEmpty(nomeAluno)) return "";
+        if (personagemDoAluno.TryGetValue(nomeAluno, out string c)) return c;
+        return PlayerPrefs.GetString($"Personagem_{tokenEscola}_{GerenciadorPerfis.SanitizarNome(nomeAluno)}", "");
+    }
+
+    public bool PersonagemOcupado(string codigo) => !string.IsNullOrEmpty(codigo) && personagensOcupados.Contains(codigo);
+
+    /// <summary>Busca no servidor quem já tem cada personagem nesta escola.</summary>
+    public void AtualizarPersonagens(System.Action<bool> aoTerminar = null)
+    {
+        StartCoroutine(AtualizarPersonagensCoroutine(aoTerminar));
+    }
+
+    private IEnumerator AtualizarPersonagensCoroutine(System.Action<bool> aoTerminar)
+    {
+        using (UnityWebRequest req = UnityWebRequest.Get($"{servidorUrl}/api/jogo/personagens?token={UnityWebRequest.EscapeURL(tokenEscola)}"))
+        {
+            req.SetRequestHeader("X-Escola-Token", tokenEscola);
+            req.timeout = TIMEOUT_CONEXAO;
+            yield return req.SendWebRequest();
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                aoTerminar?.Invoke(false);
+                yield break;
+            }
+            DtoPersonagensRoot dados = null;
+            try { dados = JsonUtility.FromJson<DtoPersonagensRoot>(req.downloadHandler.text); } catch { }
+            if (dados == null) { aoTerminar?.Invoke(false); yield break; }
+
+            personagemDoAluno.Clear();
+            personagensOcupados.Clear();
+            if (dados.trofeusNecessarios > 0) TrofeusParaPersonagem = dados.trofeusNecessarios;
+            foreach (var p in dados.personagens ?? new List<DtoPersonagemAluno>())
+            {
+                if (string.IsNullOrEmpty(p.codigo)) continue;
+                personagensOcupados.Add(p.codigo);
+                if (!string.IsNullOrEmpty(p.aluno))
+                {
+                    personagemDoAluno[p.aluno] = p.codigo;
+                    PlayerPrefs.SetString($"Personagem_{tokenEscola}_{GerenciadorPerfis.SanitizarNome(p.aluno)}", p.codigo);
+                }
+            }
+            PlayerPrefs.Save();
+            OnPersonagensAtualizados?.Invoke();
+            if (GerenciadorPerfis.Instance != null) GerenciadorPerfis.Instance.AtualizarCrachaELista(); // foto no crachá do Lobby
+            aoTerminar?.Invoke(true);
+        }
+    }
+
+    /// <summary>Resgata o personagem no servidor. Resposta: (sucesso, mensagem para a criança).</summary>
+    public void ResgatarPersonagem(string nomeAluno, string codigo, System.Action<bool, string> aoTerminar)
+    {
+        StartCoroutine(ResgatarPersonagemCoroutine(nomeAluno, codigo, aoTerminar));
+    }
+
+    private IEnumerator ResgatarPersonagemCoroutine(string nomeAluno, string codigo, System.Action<bool, string> aoTerminar)
+    {
+        string json = JsonUtility.ToJson(new DtoResgatarPersonagemEnvio { nomeAluno = nomeAluno, codigo = codigo });
+        bool ok = false;
+        string mensagem = "Sem conexão com o servidor. Tente de novo com internet.";
+        yield return StartCoroutine(PostJsonCoroutine("/api/jogo/personagens/resgatar", tokenEscola, json, req =>
+        {
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                ok = true;
+                mensagem = "";
+            }
+            else if (req.responseCode > 0)
+            {
+                DtoErroServidor e = LerErro(req.downloadHandler?.text ?? "");
+                if (e != null && !string.IsNullOrEmpty(e.erro)) mensagem = e.erro;
+            }
+        }));
+        if (ok)
+        {
+            personagemDoAluno[nomeAluno] = codigo;
+            personagensOcupados.Add(codigo);
+            PlayerPrefs.SetString($"Personagem_{tokenEscola}_{GerenciadorPerfis.SanitizarNome(nomeAluno)}", codigo);
+            PlayerPrefs.Save();
+            OnPersonagensAtualizados?.Invoke();
+        }
+        else
+        {
+            AtualizarPersonagens(); // alguém pode ter pegado o personagem: atualiza a galeria
+        }
+        aoTerminar?.Invoke(ok, mensagem);
+    }
+
+    /// <summary>Relatório por habilidade da BNCC de uma sala (turmaId) ou da escola (turmaId vazio).</summary>
+    public void BuscarRelatorioHabilidades(string turmaId, System.Action<DtoRelatorioHabilidadesRoot> aoTerminar)
+    {
+        StartCoroutine(BuscarRelatorioHabilidadesCoroutine(turmaId, aoTerminar));
+    }
+
+    private IEnumerator BuscarRelatorioHabilidadesCoroutine(string turmaId, System.Action<DtoRelatorioHabilidadesRoot> aoTerminar)
+    {
+        string url = $"{servidorUrl}/api/jogo/habilidades-sala?token={UnityWebRequest.EscapeURL(tokenEscola)}" +
+                     (string.IsNullOrEmpty(turmaId) ? "" : $"&turmaId={UnityWebRequest.EscapeURL(turmaId)}");
+        using (UnityWebRequest req = UnityWebRequest.Get(url))
+        {
+            req.SetRequestHeader("X-Escola-Token", tokenEscola);
+            req.timeout = TIMEOUT_CONEXAO;
+            yield return req.SendWebRequest();
+            DtoRelatorioHabilidadesRoot dados = null;
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                try { dados = JsonUtility.FromJson<DtoRelatorioHabilidadesRoot>(req.downloadHandler.text); } catch { }
+            }
+            aoTerminar?.Invoke(dados);
+        }
+    }
+
     public void EnviarFaseConcluida(string nomeAluno, string materia, int nivelIndex, int numeroFase, int vidasRestantes, int vidasMaximas, int tempoSegundos)
     {
         if (string.IsNullOrEmpty(nomeAluno)) return;
@@ -766,15 +964,6 @@ public class ServicoNuvem : MonoBehaviour
         var op = new OperacaoNuvem { tipo = OP_CRIAR_ALUNO, token = tokenEscola, aluno = nome, sala = nomeTurma?.Trim() ?? "" };
         if (onIdRecebido != null) callbacksCriacao[op] = onIdRecebido;
         Enfileirar(op);
-    }
-
-    /// <summary>
-    /// Cadastra no servidor uma sala criada no jogo.
-    /// </summary>
-    public void CadastrarSalaNuvem(string nomeSala)
-    {
-        if (string.IsNullOrWhiteSpace(nomeSala)) return;
-        Enfileirar(new OperacaoNuvem { tipo = OP_CRIAR_SALA, token = tokenEscola, sala = nomeSala.Trim() });
     }
 
     public void AtualizarTurmaAlunoNuvem(string nomeAluno, string nomeTurma)
@@ -939,13 +1128,10 @@ public class ServicoNuvem : MonoBehaviour
 
             case OP_CRIAR_SALA:
             {
-                string json = JsonUtility.ToJson(new DtoCriarTurmaEnvio { nomeTurma = op.sala });
-                yield return StartCoroutine(PostJsonCoroutine("/api/jogo/criar-turma", token, json, req =>
-                {
-                    resultado = Classificar(req, op, false);
-                    if (resultado == ResultadoEnvio.Sucesso)
-                        Debug.Log($"[ServicoNuvem] Sala '{op.sala}' salva no servidor.");
-                }));
+                // Desde a 1.0.8 o jogo não cria salas (só a administração, no painel).
+                // Pedidos antigos que ficaram na fila deste computador são descartados.
+                Debug.Log($"[ServicoNuvem] Pedido antigo de criar a sala '{op.sala}' descartado (salas são cadastradas pela administração).");
+                resultado = ResultadoEnvio.Descartar;
                 break;
             }
 
@@ -998,6 +1184,22 @@ public class ServicoNuvem : MonoBehaviour
                     resultado = Classificar(req, op, false);
                     if (resultado == ResultadoEnvio.Sucesso)
                         Debug.Log($"[ServicoNuvem] Progresso salvo na nuvem: {op.aluno} | {op.progresso.materia} Fase {op.progresso.numeroFase}");
+                }));
+                break;
+            }
+
+            case OP_HABILIDADES:
+            {
+                if (op.habilidades == null || op.habilidades.Count == 0)
+                {
+                    resultado = ResultadoEnvio.Descartar;
+                    break;
+                }
+                string json = JsonUtility.ToJson(new DtoHabilidadesEnvio { nomeAluno = op.aluno, itens = op.habilidades });
+                yield return StartCoroutine(PostJsonCoroutine("/api/jogo/habilidades", token, json, req =>
+                {
+                    // Aluno que não existe mais no servidor: descarta (não adianta reenviar)
+                    resultado = Classificar(req, op, true);
                 }));
                 break;
             }
@@ -1066,6 +1268,16 @@ public class ServicoNuvem : MonoBehaviour
             string motivo = e != null && !string.IsNullOrEmpty(e.erro) ? e.erro : "A escola atingiu o limite de alunos da licença.";
             Debug.LogWarning($"[ServicoNuvem] Cadastro de '{op.aluno}' recusado: {motivo}");
             if (MesmoToken(op.token, tokenEscola)) OnCadastroRecusado?.Invoke(op.aluno, motivo);
+            return ResultadoEnvio.Descartar;
+        }
+
+        // A sala não existe no servidor (salas são cadastradas só pela administração): não adianta reenviar
+        if (codigo == 409 && corpo.Contains("\"sala_inexistente\""))
+        {
+            DtoErroServidor e = LerErro(corpo);
+            string motivo = e != null && !string.IsNullOrEmpty(e.erro) ? e.erro : "A sala não existe nesta escola.";
+            Debug.LogWarning($"[ServicoNuvem] Pedido de '{op.aluno}' recusado: {motivo}");
+            if (MesmoToken(op.token, tokenEscola) && op.tipo == OP_CRIAR_ALUNO) OnCadastroRecusado?.Invoke(op.aluno, motivo);
             return ResultadoEnvio.Descartar;
         }
 
@@ -1537,6 +1749,95 @@ public class ServicoNuvem : MonoBehaviour
     }
 
     /// <summary>
+    /// Traz do servidor as fases que o aluno já concluiu (em qualquer computador da escola) e marca neste PC.
+    /// Só acrescenta: nunca desmarca uma fase concluída aqui, mesmo que ela ainda não tenha chegado ao servidor.
+    /// </summary>
+    public void RestaurarProgressoDoAluno(string nomeAluno)
+    {
+        if (string.IsNullOrEmpty(nomeAluno) || !conectadoAoServidor) return;
+        if (!mapaAlunosIds.TryGetValue(nomeAluno, out string alunoId) || string.IsNullOrEmpty(alunoId)) return;
+
+        BuscarProgressoAluno(alunoId, dados =>
+        {
+            if (dados == null || dados.fases == null) return;
+            AplicarProgressoDoServidor(nomeAluno, dados.fases);
+        });
+    }
+
+    private void AplicarProgressoDoServidor(string nomeAluno, List<DtoFaseAluno> fases)
+    {
+        string pfx = $"P_{GerenciadorPerfis.SanitizarNome(nomeAluno)}_";
+        int novas = 0;
+
+        foreach (var f in fases)
+        {
+            if (f == null || !f.concluida) continue;
+            string mat = (f.materia ?? "").ToLowerInvariant().StartsWith("mat") ? "Math" : "Port";
+            int nivel = NivelDoServidor(f.nivel);
+            int fase = f.numeroFase - 1;
+            if (nivel < 0 || fase < 0 || fase >= 30) continue;
+
+            string chaveFase = $"{pfx}FaseCompleta_{mat}_{nivel}_{fase}";
+            if (PlayerPrefs.GetInt(chaveFase, 0) != 1)
+            {
+                PlayerPrefs.SetInt(chaveFase, 1);
+                novas++;
+            }
+
+            // Estrelas do servidor → vidas que sobraram (3 estrelas = 2 vidas, 2 estrelas = 1 vida)
+            int vidas = Mathf.Clamp(f.estrelas - 1, 1, VIDAS_POR_FASE);
+            string chaveVidas = $"{pfx}VidasRestantes_{mat}_{nivel}_{fase}";
+            if (vidas > PlayerPrefs.GetInt(chaveVidas, 0)) PlayerPrefs.SetInt(chaveVidas, vidas);
+        }
+
+        if (novas == 0) return;
+
+        // Níveis liberados e troféus: mesmas regras do GameManager ao concluir a fase 30 de um nível
+        foreach (string mat in new[] { "Port", "Math" })
+        {
+            for (int nivel = 0; nivel < 3; nivel++)
+            {
+                if (PlayerPrefs.GetInt($"{pfx}FaseCompleta_{mat}_{nivel}_29", 0) != 1) continue;
+
+                if (nivel == 0)
+                {
+                    PlayerPrefs.SetInt($"{pfx}Desbloqueio_Medio_{mat}", 1);
+                    if (mat == "Port") PlayerPrefs.SetInt($"{pfx}Desbloqueio_Medio", 1);
+                }
+                else if (nivel == 1)
+                {
+                    PlayerPrefs.SetInt($"{pfx}Desbloqueio_Dificil_{mat}", 1);
+                    if (mat == "Port") PlayerPrefs.SetInt($"{pfx}Desbloqueio_Dificil", 1);
+                }
+
+                int vidasPreservadas = 0;
+                for (int i = 0; i < 30; i++)
+                    vidasPreservadas += Mathf.Clamp(PlayerPrefs.GetInt($"{pfx}VidasRestantes_{mat}_{nivel}_{i}", 1), 0, VIDAS_POR_FASE);
+                int total = 30 * VIDAS_POR_FASE;
+                int perdidos = total - vidasPreservadas;
+                int rank = perdidos == 0 ? 3 : (perdidos * 100f / total <= 50f ? 2 : 1);
+                string chaveTrofeu = $"{pfx}TrofeuRank_{mat}_{nivel}";
+                if (rank > PlayerPrefs.GetInt(chaveTrofeu, 0)) PlayerPrefs.SetInt(chaveTrofeu, rank);
+            }
+        }
+
+        PlayerPrefs.Save();
+        Debug.Log($"[ServicoNuvem] Progresso de '{nomeAluno}' trazido do servidor: {novas} fase(s) concluída(s) em outros computadores.");
+
+        if (string.Equals(GerenciadorPerfis.PerfilAtivo, nomeAluno, StringComparison.Ordinal))
+            GerenciadorPerfis.NotificarProgressoAtualizado();
+    }
+
+    private static int NivelDoServidor(string nivel)
+    {
+        string n = (nivel ?? "").Trim().ToLowerInvariant();
+        if (n.StartsWith("f")) return 0;
+        if (n.StartsWith("m")) return 1;
+        if (n.StartsWith("d")) return 2;
+        return -1;
+    }
+
+    /// <summary>
     /// Busca no servidor o desempenho fase a fase de um aluno (Área do Professor).
     /// </summary>
     public void BuscarProgressoAluno(string alunoId, System.Action<DtoProgressoAlunoRoot> callback)
@@ -1646,7 +1947,17 @@ public class ServicoNuvem : MonoBehaviour
             {
                 // Diferencia "senha errada" de "sem conexão", para a tela de login avisar corretamente
                 string motivo;
-                if (req.responseCode == 401) motivo = "Usuário ou senha do professor incorretos.";
+                if (req.responseCode == 401)
+                {
+                    motivo = "Usuário ou senha do professor incorretos.";
+                    // O servidor explica casos especiais (ex.: senha da coordenação ainda não definida)
+                    try
+                    {
+                        var corpo = JsonUtility.FromJson<DtoLoginProfessorResposta>(req.downloadHandler.text);
+                        if (corpo != null && !string.IsNullOrEmpty(corpo.erro)) motivo = corpo.erro;
+                    }
+                    catch { }
+                }
                 else if (req.responseCode == 404) motivo = "A escola deste computador não foi encontrada no servidor.";
                 else motivo = "Sem conexão com o servidor. Verifique a internet e tente novamente.";
                 callback?.Invoke(false, new DtoLoginProfessorResposta { sucesso = false, erro = motivo, tipo = req.responseCode == 401 ? "credenciais" : "conexao" });
@@ -1673,8 +1984,8 @@ public class ServicoNuvem : MonoBehaviour
 
     // Versão do código DESTE build. Aumente a cada novo build publicado (e use o mesmo número no servidor ao enviar o patch).
     // O texto de versão do Lobby também lê daqui.
-    public const int VersaoCodigoDoBuild = 107;
-    public const string VersaoNomeDoBuild = "1.0.7";
+    public const int VersaoCodigoDoBuild = 108;
+    public const string VersaoNomeDoBuild = "1.0.8";
     public int versaoLocalCodigo = VersaoCodigoDoBuild;
     public string versaoLocalNome = VersaoNomeDoBuild;
     public bool patchProntoParaAplicar { get; private set; } = false;

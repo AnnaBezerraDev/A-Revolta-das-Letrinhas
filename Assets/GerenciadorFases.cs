@@ -457,7 +457,9 @@ public class GerenciadorFases : MonoBehaviour
     /// <param name="vidasRestantes">Vidas que sobraram ao concluir a fase (define estrelas e erros enviados ao servidor).</param>
     /// <param name="vidasMaximas">Vidas com que a fase começou.</param>
     /// <param name="tempoSegundos">Tempo que o aluno levou na fase.</param>
-    public void MarcarFaseComoCompleta(int vidasRestantes = 2, int vidasMaximas = 2, int tempoSegundos = 0)
+    /// <param name="enviarAoServidor">false quando o professor resolveu a fase ("Auto-completar"):
+    /// libera a próxima fase neste computador, mas não entra no desempenho do aluno.</param>
+    public void MarcarFaseComoCompleta(int vidasRestantes = 2, int vidasMaximas = 2, int tempoSegundos = 0, bool enviarAoServidor = true)
     {
         if (faseAtualJogando >= 0)
         {
@@ -471,7 +473,9 @@ public class GerenciadorFases : MonoBehaviour
             // Sincroniza automaticamente com o Servidor .NET
             try
             {
-                if (ServicoNuvem.Instancia != null)
+                if (!enviarAoServidor)
+                    Debug.Log($"[Nuvem] Fase {faseAtualJogando + 1} resolvida pelo professor: liberada neste computador, sem contar no desempenho do aluno.");
+                else if (ServicoNuvem.Instancia != null)
                 {
                     ServicoNuvem.Instancia.EnviarFaseConcluida(
                         GerenciadorPerfis.PerfilAtivo,

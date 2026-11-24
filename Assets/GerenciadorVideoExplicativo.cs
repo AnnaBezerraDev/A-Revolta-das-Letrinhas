@@ -693,6 +693,25 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
                 $"{gameManager.UltimoPassoAPassoMatematica}\n\n";
         }
 
+        if (gameManager != null && gameManager.ConteudoAlfabetizacaoAtivo)
+        {
+            // 1º e 2º ano: somar, tirar, dobro e metade com os dedos ou desenhos
+            urlAtual = !string.IsNullOrEmpty(urlYoutubeMathFacil) ? urlYoutubeMathFacil : urlYoutubeGeral;
+            if (textoTituloNivel != null) textoTituloNivel.text = "Continhas de juntar e tirar";
+            if (textoCorpoExplicacao != null)
+            {
+                textoCorpoExplicacao.text =
+                    resolucaoQuestao +
+                    "<b>COMO PENSAR:</b>\n" +
+                    "- <b>Somar (+)</b> é juntar: comece pelo número maior e conte o outro nos dedos.\n" +
+                    "- <b>Tirar (-)</b> é diminuir: comece no primeiro número e volte nos dedos.\n" +
+                    "- <b>Dobro</b> é o número duas vezes; <b>metade</b> é dividir em duas partes iguais.\n" +
+                    "- Você também pode desenhar bolinhas no caderno!";
+            }
+            if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo de apoio (YouTube)";
+            return;
+        }
+
         switch (nivel)
         {
             case 0: // Matemática Fácil
@@ -748,6 +767,27 @@ public class GerenciadorVideoExplicativo : MonoBehaviour
 
     private void ConfigurarConteudoPortugues(int nivel)
     {
+        if (gameManager != null && gameManager.ConteudoAlfabetizacaoAtivo)
+        {
+            // 1º e 2º ano: vogal, sílaba ou consoante que falta na palavra
+            urlAtual = !string.IsNullOrEmpty(urlYoutubeFacil) ? urlYoutubeFacil : urlYoutubeGeral;
+            string tipo = gameManager.TipoDesafioAlfabetizacao;
+            string oQue = tipo == "silaba" ? "a sílaba (o pedacinho)" : tipo == "consoante" ? "a consoante" : "a vogal";
+            if (textoTituloNivel != null) textoTituloNivel.text = "Completar a palavra";
+            if (textoCorpoExplicacao != null)
+            {
+                textoCorpoExplicacao.text =
+                    "Não se preocupe em errar, faz parte do aprendizado!\n\n" +
+                    $"<b>A palavra era:</b> <size=26><color=#FFE082>{gameManager.PalavraCompleta}</color></size>\n\n" +
+                    $"Para descobrir {oQue} que falta:\n" +
+                    "- Fale a palavra <b>bem devagar</b>, em voz alta.\n" +
+                    "- Bata uma palma para cada pedacinho: <b>BO - LA</b>.\n" +
+                    "- Use o botão <b>OUVIR</b> para escutar a palavra de novo.";
+            }
+            if (textoTituloVideo != null) textoTituloVideo.text = "Vídeo de apoio (YouTube)";
+            return;
+        }
+
         switch (nivel)
         {
             case 0: // Fácil
