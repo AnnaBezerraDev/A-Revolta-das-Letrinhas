@@ -767,12 +767,53 @@ public class GerenciadorPerfis : MonoBehaviour
         if (rootLobby == null) return;
 
         CriarBadgeLobby(rootLobby);
+        CriarTextoVersao(rootLobby);
         CriarModalPerfis(rootLobby);
 
         OnPerfilAlterado -= AtualizarUICompleta;
         OnPerfilAlterado += AtualizarUICompleta;
 
         AtualizarUICompleta();
+    }
+
+    // Texto pequeno com a versão do jogo, no canto inferior esquerdo do Lobby.
+    private void CriarTextoVersao(Transform root)
+    {
+        if (root.Find("TextoVersaoJogo") != null) return;
+
+        GameObject goFundo = new GameObject("TextoVersaoJogo", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image),
+            typeof(HorizontalLayoutGroup), typeof(ContentSizeFitter));
+        goFundo.transform.SetParent(root, false);
+        RectTransform rt = goFundo.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.zero;
+        rt.pivot = Vector2.zero;
+        rt.anchoredPosition = new Vector2(14f, 12f);
+
+        Image fundo = goFundo.GetComponent<Image>();
+        fundo.color = new Color(0f, 0f, 0f, 0.62f);
+        fundo.raycastTarget = false;
+
+        HorizontalLayoutGroup layout = goFundo.GetComponent<HorizontalLayoutGroup>();
+        layout.padding = new RectOffset(12, 12, 4, 4);
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = false;
+        layout.childForceExpandHeight = false;
+
+        ContentSizeFitter ajuste = goFundo.GetComponent<ContentSizeFitter>();
+        ajuste.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+        ajuste.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        GameObject goTexto = new GameObject("Texto", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        goTexto.transform.SetParent(goFundo.transform, false);
+        TextMeshProUGUI tmp = goTexto.GetComponent<TextMeshProUGUI>();
+        tmp.text = "Versão " + ServicoNuvem.VersaoNomeDoBuild;
+        tmp.fontSize = 19;
+        tmp.color = new Color(1f, 1f, 1f, 0.95f);
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.textWrappingMode = TextWrappingModes.NoWrap;
+        tmp.raycastTarget = false;
     }
 
     private void CriarBadgeLobby(Transform root)
